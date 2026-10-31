@@ -1,0 +1,61 @@
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: yofasoshop_db
+      MYSQL_USER: ${DB_USERNAME:?Set DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./src/main/resources/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h127.0.0.1 --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  backend:
+    build: .
+    env_file: .env
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/yofasoshop_db?connectionTimeZone=UTC
+      AI_SERVICE_BASE_URL: http://ai-api:8000
+      STORAGE_LOCAL_ROOT: /app/data/storage
+      BACKEND_RUNTIME_ROOT: /app/data/runtime
+      SERVER_PORT: 8080
+    ports:
+      - "127.0.0.1:${SERVER_PORT:-8080}:8080"
+    volumes:
+      - media_data:/app/data/storage
+      - backend_runtime:/app/data/runtime
+    depends_on:
+      mysql:
+        condition: service_healthy
+  ai-api:
+    build:
+      context: ../YoFaSoShop_AIService
+      dockerfile: Dockerfile.api
+    environment:
+      APP_ENV: development
+      AI_MODE: mock
+      EMBEDDED_WORKER: "true"
+      AI_INTERNAL_API_KEY: ${AI_INTERNAL_API_KEY:?Set AI_INTERNAL_API_KEY}
+      RUNTIME_DIR: /app/data/runtime
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ai_runtime:/app/data/runtime
+    depends_on:
+      backend:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+volumes:
+  mysql_data:
+  media_data:
+  backend_runtime:
+  ai_runtime:

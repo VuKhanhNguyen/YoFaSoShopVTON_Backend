@@ -1,0 +1,6823 @@
+{
+  "openapi": "3.1.0",
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "bearerFormat": "JWT",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    },
+    "schemas": {
+      "AccountStatus": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "pattern": "^(?:HOAT_DONG|KHOA_TAM_THOI)$"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "Address": {
+        "properties": {
+          "city": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 100
+          },
+          "defaultAddress": {
+            "type": "boolean"
+          },
+          "phone": {
+            "type": "string",
+            "pattern": "^(?:[0-9+]{9,15})$"
+          },
+          "provinceCode": {
+            "type": "string",
+            "pattern": "^(?:[0-9]{2})$"
+          },
+          "recipientName": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 100
+          },
+          "street": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 255
+          },
+          "ward": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 100
+          },
+          "wardCode": {
+            "type": "string",
+            "pattern": "^(?:[0-9]{5})$"
+          }
+        },
+        "type": "object",
+        "required": [
+          "recipientName",
+          "phone",
+          "street",
+          "ward",
+          "city",
+          "defaultAddress"
+        ],
+        "additionalProperties": false
+      },
+      "Adjustment": {
+        "properties": {
+          "delta": {
+            "type": "integer",
+            "minimum": -100000,
+            "maximum": 100000
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 255
+          },
+          "variantId": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 20
+          }
+        },
+        "type": "object",
+        "required": [
+          "variantId",
+          "delta",
+          "reason"
+        ],
+        "additionalProperties": false
+      },
+      "Analysis": {
+        "properties": {
+          "productAssetIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 0,
+            "maxItems": 8
+          },
+          "referenceAssetIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 0,
+            "maxItems": 8
+          }
+        },
+        "type": "object",
+        "required": [
+          "productAssetIds",
+          "referenceAssetIds"
+        ],
+        "additionalProperties": false
+      },
+      "Approval": {
+        "properties": {
+          "bindings": {
+            "items": {
+              "$ref": "#/components/schemas/Binding"
+            },
+            "type": "array",
+            "minItems": 0,
+            "maxItems": 50
+          }
+        },
+        "type": "object",
+        "required": [
+          "bindings"
+        ],
+        "additionalProperties": false
+      },
+      "Assignment": {
+        "properties": {
+          "shipperId": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 20
+          }
+        },
+        "type": "object",
+        "required": [
+          "shipperId"
+        ],
+        "additionalProperties": false
+      },
+      "Batch": {
+        "properties": {
+          "addresses": {
+            "items": {
+              "$ref": "#/components/schemas/Conversion"
+            },
+            "type": "array",
+            "minItems": 0,
+            "maxItems": 100
+          }
+        },
+        "type": "object",
+        "required": [
+          "addresses"
+        ],
+        "additionalProperties": false
+      },
+      "Binding": {
+        "properties": {
+          "sourceAssetId": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 64
+          },
+          "variantId": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 20
+          }
+        },
+        "type": "object",
+        "required": [
+          "variantId",
+          "sourceAssetId"
+        ],
+        "additionalProperties": false
+      },
+      "Category": {
+        "properties": {
+          "description": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 255
+          },
+          "name": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 100
+          },
+          "parentId": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 20
+          },
+          "position": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "position"
+        ],
+        "additionalProperties": false
+      },
+      "Checkout": {
+        "properties": {
+          "addressId": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 20
+          },
+          "cashReceived": {
+            "type": "number",
+            "minimum": 0
+          },
+          "customerId": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 20
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Item"
+            },
+            "type": "array",
+            "minItems": 0,
+            "maxItems": 50
+          },
+          "voucher": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 50
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "Conversion": {
+        "properties": {
+          "districtCode": {
+            "type": "string",
+            "pattern": "^(?:[0-9]{3})$"
+          },
+          "provinceCode": {
+            "type": "string",
+            "pattern": "^(?:[0-9]{2})$"
+          },
+          "street": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 255
+          },
+          "wardCode": {
+            "type": "string",
+            "pattern": "^(?:[0-9]{5})$"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provinceCode",
+          "districtCode"
+        ],
+        "additionalProperties": false
+      },
+      "ErrorBody": {
+        "properties": {
+          "correlationId": {
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "errorCode": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "retryable": {
+            "type": "boolean"
+          }
+        },
+        "type": "object",
+        "required": [
+          "correlationId",
+          "details",
+          "errorCode",
+          "message",
+          "retryable"
+        ],
+        "additionalProperties": false
+      },
+      "Forgot": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 100,
+            "format": "email"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "additionalProperties": false
+      },
+      "Interaction": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "pattern": "^(?:DA_THU_THEM|DA_THEM_GIO_HANG|DA_MUA)$"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "Item": {
+        "properties": {
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 99
+          },
+          "variantId": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 20
+          }
+        },
+        "type": "object",
+        "required": [
+          "variantId",
+          "quantity"
+        ],
+        "additionalProperties": false
+      },
+      "Login": {
+        "properties": {
+          "password": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 72
+          },
+          "username": {
+            "type": "string",
+            "pattern": "^(?:[A-Za-z][A-Za-z0-9]{3,15})$"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "additionalProperties": false
+      },
+      "Moderation": {
+        "properties": {
+          "reply": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 3000
+          },
+          "status": {
+            "type": "string",
+            "pattern": "^(?:CHO_DUYET|DA_HIEN_THI|DA_AN_VI_PHAM)$"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "Outfit": {
+        "properties": {
+          "firstVariantId": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 20
+          },
+          "secondVariantId": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 20
+          },
+          "tucked": {
+            "type": "boolean"
+          }
+        },
+        "type": "object",
+        "required": [
+          "firstVariantId",
+          "tucked"
+        ],
+        "additionalProperties": false
+      },
+      "Password": {
+        "properties": {
+          "currentPassword": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 72
+          },
+          "newPassword": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 72
+          }
+        },
+        "type": "object",
+        "required": [
+          "currentPassword",
+          "newPassword"
+        ],
+        "additionalProperties": false
+      },
+      "Person": {
+        "properties": {
+          "assetId": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 64
+          },
+          "vtonCategory": {
+            "type": "string",
+            "pattern": "^(?:upper_body|lower_body|dress)$"
+          }
+        },
+        "type": "object",
+        "required": [
+          "assetId"
+        ],
+        "additionalProperties": false
+      },
+      "Product": {
+        "properties": {
+          "categoryId": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 20
+          },
+          "description": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 10000
+          },
+          "fit": {
+            "type": "string",
+            "pattern": "^(?:OM_SAT|SUONG_VUA|RONG_OVERSIZE)$"
+          },
+          "length": {
+            "type": "string",
+            "pattern": "^(?:NGAN_TREN_GOI|LUNG_NGANG_GOI|MIDI_QUA_GOI|DAI_CHAM_GOT|AO_CROPTOP|AO_TIEU_CHUAN|AO_DANG_DAI)$"
+          },
+          "material": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 100
+          },
+          "name": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 150
+          },
+          "pattern": {
+            "type": "string",
+            "pattern": "^(?:VAI_TRON|HOA_VAN_NHO|HOA_TO_BAN|KE_SOC_TAM|KE_CARO|IN_HINH)$"
+          },
+          "subtype": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 50
+          },
+          "vtonCategory": {
+            "type": "string",
+            "pattern": "^(?:upper_body|lower_body|dress)$"
+          },
+          "waist": {
+            "type": "string",
+            "pattern": "^(?:CAP_CAO|CAP_VUA|CAP_TRE|KHONG_AP_DUNG)$"
+          }
+        },
+        "type": "object",
+        "required": [
+          "categoryId",
+          "name",
+          "fit",
+          "waist",
+          "length",
+          "pattern",
+          "vtonCategory",
+          "subtype"
+        ],
+        "additionalProperties": false
+      },
+      "Profile": {
+        "properties": {
+          "currentPassword": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 72
+          },
+          "email": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 100,
+            "format": "email"
+          },
+          "fullName": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 100
+          },
+          "phone": {
+            "type": "string",
+            "pattern": "^(?:[0-9+]{9,15})$"
+          }
+        },
+        "type": "object",
+        "required": [
+          "fullName"
+        ],
+        "additionalProperties": false
+      },
+      "Promotion": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^(?:[A-Z0-9_-]{3,50})$"
+          },
+          "endsAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "maxDiscount": {
+            "type": "number",
+            "minimum": 0
+          },
+          "minimumTotal": {
+            "type": "number",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 150
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "startsAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "pattern": "^(?:PHAN_TRAM|TIEN_MAT_TRUC_TIEP|MIEN_PHI_VAN_CHUYEN)$"
+          },
+          "value": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "name",
+          "type",
+          "value",
+          "minimumTotal",
+          "quantity",
+          "startsAt",
+          "endsAt"
+        ],
+        "additionalProperties": false
+      },
+      "Register": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 100,
+            "format": "email"
+          },
+          "fullName": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 100
+          },
+          "password": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 72
+          },
+          "phone": {
+            "type": "string",
+            "pattern": "^(?:[0-9+]{9,15})$"
+          },
+          "username": {
+            "type": "string",
+            "pattern": "^(?:[A-Za-z][A-Za-z0-9]{3,15})$"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "password",
+          "phone",
+          "email"
+        ],
+        "additionalProperties": false
+      },
+      "Reset": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 100,
+            "format": "email"
+          },
+          "newPassword": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 72
+          },
+          "otp": {
+            "type": "string",
+            "pattern": "^(?:[0-9]{6})$"
+          },
+          "requestId": {
+            "type": "string",
+            "pattern": "^(?:[a-f0-9]{32})$"
+          }
+        },
+        "type": "object",
+        "required": [
+          "requestId",
+          "email",
+          "otp",
+          "newPassword"
+        ],
+        "additionalProperties": false
+      },
+      "Review": {
+        "properties": {
+          "comment": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 3000
+          },
+          "orderLineId": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 20
+          },
+          "stars": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          }
+        },
+        "type": "object",
+        "required": [
+          "orderLineId",
+          "stars",
+          "comment"
+        ],
+        "additionalProperties": false
+      },
+      "Roles": {
+        "properties": {
+          "roleIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 0,
+            "maxItems": 5
+          }
+        },
+        "type": "object",
+        "required": [
+          "roleIds"
+        ],
+        "additionalProperties": false
+      },
+      "Route": {
+        "properties": {
+          "garmentLength": {
+            "type": "string",
+            "pattern": "^(?:SHORT|MIDI|LONG|UNKNOWN)$"
+          },
+          "garmentSubtype": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 64
+          },
+          "personFrame": {
+            "type": "string",
+            "pattern": "^(?:full_body|three_quarter|half_body|invalid)$"
+          },
+          "vtonCategory": {
+            "type": "string",
+            "pattern": "^(?:upper_body|lower_body|dress)$"
+          }
+        },
+        "type": "object",
+        "required": [
+          "vtonCategory",
+          "personFrame",
+          "garmentLength"
+        ],
+        "additionalProperties": false
+      },
+      "ShiftMoney": {
+        "properties": {
+          "amount": {
+            "type": "number",
+            "minimum": 0
+          },
+          "note": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 1000
+          }
+        },
+        "type": "object",
+        "required": [
+          "amount"
+        ],
+        "additionalProperties": false
+      },
+      "Staff": {
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/Register"
+          },
+          "roleIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 0,
+            "maxItems": 5
+          }
+        },
+        "type": "object",
+        "required": [
+          "account",
+          "roleIds"
+        ],
+        "additionalProperties": false
+      },
+      "Token": {
+        "properties": {
+          "refreshToken": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 100
+          }
+        },
+        "type": "object",
+        "required": [
+          "refreshToken"
+        ],
+        "additionalProperties": false
+      },
+      "TryOn": {
+        "properties": {
+          "consent": {
+            "type": "boolean",
+            "const": true
+          },
+          "personAssetId": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 64
+          },
+          "samples": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "steps": {
+            "type": "integer",
+            "minimum": 10,
+            "maximum": 50
+          },
+          "variantId": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 20
+          }
+        },
+        "type": "object",
+        "required": [
+          "variantId",
+          "personAssetId",
+          "seed",
+          "steps",
+          "samples",
+          "consent"
+        ],
+        "additionalProperties": false
+      },
+      "Unit": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "districtCode": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "provinceCode": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "required": [],
+        "additionalProperties": false
+      },
+      "Variant": {
+        "properties": {
+          "colorName": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 100
+          },
+          "colors": {
+            "type": "string",
+            "pattern": "^(?:#[0-9A-Fa-f]{6}(,#[0-9A-Fa-f]{6}){0,8})$"
+          },
+          "price": {
+            "type": "number",
+            "minimum": 0
+          },
+          "salePrice": {
+            "type": "number",
+            "minimum": 0
+          },
+          "shelf": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 50
+          },
+          "size": {
+            "type": "string",
+            "pattern": "^(?:XS|S|M|L|XL|XXL|FREESIZE)$"
+          },
+          "sku": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 50
+          },
+          "status": {
+            "type": "string",
+            "pattern": "^(?:DANG_BAN|HET_HANG|NGUNG_BAN)$"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sku",
+          "size",
+          "colorName",
+          "colors",
+          "price",
+          "status"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "info": {
+    "version": "1.0.0",
+    "description": "API nghiệp vụ; AI có contract riêng. response map dùng alias camelCase theo hướng dẫn; không có endpoint thanh toán online giả.",
+    "title": "YoFaSoShop Backend API"
+  },
+  "paths": {
+    "/api/v1/admin/analyses/{id}": {
+      "get": {
+        "operationId": "AiController_analysisStatus",
+        "summary": "AiController: analysisStatus",
+        "x-authorization": "hasRole('SHOP_ADMIN')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/admin/analyses/{id}/approve": {
+      "post": {
+        "operationId": "AiController_approve",
+        "summary": "AiController: approve",
+        "x-authorization": "hasRole('SHOP_ADMIN')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Approval"
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/admin/categories": {
+      "post": {
+        "operationId": "CatalogController_category",
+        "summary": "CatalogController: category",
+        "x-authorization": "hasRole('SHOP_ADMIN')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Category"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/admin/categories/{id}": {
+      "delete": {
+        "operationId": "CatalogController_hideCategory",
+        "summary": "CatalogController: hideCategory",
+        "x-authorization": "hasRole('SHOP_ADMIN')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/admin/orders/{id}/cancel": {
+      "post": {
+        "operationId": "StaffController_adminCancel",
+        "summary": "StaffController: adminCancel",
+        "x-authorization": "hasRole('SHOP_ADMIN')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/admin/products": {
+      "get": {
+        "operationId": "CatalogController_adminProducts__api_v1_admin_products",
+        "summary": "CatalogController: adminProducts",
+        "x-authorization": "hasAnyRole('SHOP_ADMIN','STAFF_CASHIER','STAFF_WAREHOUSE','STAFF_SHIPPER')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "size",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "q",
+            "schema": {
+              "type": "string",
+              "default": ""
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "categoryId",
+            "schema": {
+              "type": "string",
+              "default": ""
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "color",
+            "schema": {
+              "type": "string",
+              "default": ""
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "material",
+            "schema": {
+              "type": "string",
+              "default": ""
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "fit",
+            "schema": {
+              "type": "string",
+              "default": ""
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "pattern",
+            "schema": {
+              "type": "string",
+              "default": ""
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "default": ""
+            },
+            "required": false,
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      },
+      "post": {
+        "operationId": "CatalogController_create",
+        "summary": "CatalogController: create",
+        "x-authorization": "hasRole('SHOP_ADMIN')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Product"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/admin/products/{id}": {
+      "delete": {
+        "operationId": "CatalogController_archive",
+        "summary": "CatalogController: archive",
+        "x-authorization": "hasRole('SHOP_ADMIN')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      },
+      "get": {
+        "operationId": "CatalogController_adminProduct__api_v1_admin_products__id_",
+        "summary": "CatalogController: adminProduct",
+        "x-authorization": "hasAnyRole('SHOP_ADMIN','STAFF_CASHIER','STAFF_WAREHOUSE','STAFF_SHIPPER')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      },
+      "put": {
+        "operationId": "CatalogController_update",
+        "summary": "CatalogController: update",
+        "x-authorization": "hasRole('SHOP_ADMIN')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Product"
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/admin/products/{id}/analysis": {
+      "post": {
+        "operationId": "AiController_analysis",
+        "summary": "AiController: analysis",
+        "x-authorization": "hasRole('SHOP_ADMIN')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Analysis"
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          },
+          {
+            "name": "Idempotency-Key",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/admin/products/{id}/publish": {
+      "post": {
+        "operationId": "CatalogController_publish",
+        "summary": "CatalogController: publish",
+        "x-authorization": "hasRole('SHOP_ADMIN')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/admin/products/{id}/variants": {
+      "post": {
+        "operationId": "CatalogController_variant",
+        "summary": "CatalogController: variant",
+        "x-authorization": "hasRole('SHOP_ADMIN')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Variant"
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/admin/products/{id}/variants/{variantId}": {
+      "put": {
+        "operationId": "CatalogController_updateVariant",
+        "summary": "CatalogController: updateVariant",
+        "x-authorization": "hasRole('SHOP_ADMIN')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Variant"
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          },
+          {
+            "name": "variantId",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/admin/promotions": {
+      "post": {
+        "operationId": "StaffController_promotion",
+        "summary": "StaffController: promotion",
+        "x-authorization": "hasRole('SHOP_ADMIN')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Promotion"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/admin/promotions/{id}": {
+      "delete": {
+        "operationId": "StaffController_stopPromotion",
+        "summary": "StaffController: stopPromotion",
+        "x-authorization": "hasRole('SHOP_ADMIN')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/admin/reports/summary": {
+      "get": {
+        "operationId": "StaffController_report",
+        "summary": "StaffController: report",
+        "x-authorization": "hasRole('SHOP_ADMIN')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/admin/reviews": {
+      "get": {
+        "operationId": "InteractionController_pending",
+        "summary": "InteractionController: pending",
+        "x-authorization": "hasRole('SHOP_ADMIN')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "size",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            },
+            "required": false,
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/admin/reviews/{id}": {
+      "patch": {
+        "operationId": "InteractionController_moderate",
+        "summary": "InteractionController: moderate",
+        "x-authorization": "hasRole('SHOP_ADMIN')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Moderation"
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/admin/roles": {
+      "get": {
+        "operationId": "StaffController_roles",
+        "summary": "StaffController: roles",
+        "x-authorization": "hasRole('SHOP_ADMIN')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/admin/shifts/{id}/approve": {
+      "post": {
+        "operationId": "StaffController_approve",
+        "summary": "StaffController: approve",
+        "x-authorization": "hasRole('SHOP_ADMIN')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users": {
+      "get": {
+        "operationId": "StaffController_users",
+        "summary": "StaffController: users",
+        "x-authorization": "hasRole('SHOP_ADMIN')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "size",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            },
+            "required": false,
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      },
+      "post": {
+        "operationId": "StaffController_staff",
+        "summary": "StaffController: staff",
+        "x-authorization": "hasRole('SHOP_ADMIN')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Staff"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/{id}": {
+      "get": {
+        "operationId": "StaffLookupController_user",
+        "summary": "StaffLookupController: user",
+        "x-authorization": "hasRole('SHOP_ADMIN')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      },
+      "patch": {
+        "operationId": "StaffLookupController_editUser",
+        "summary": "StaffLookupController: editUser",
+        "x-authorization": "hasRole('SHOP_ADMIN')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Profile"
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/{id}/roles": {
+      "put": {
+        "operationId": "StaffController_grant",
+        "summary": "StaffController: grant",
+        "x-authorization": "hasRole('SHOP_ADMIN')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Roles"
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/{id}/status": {
+      "patch": {
+        "operationId": "StaffController_status",
+        "summary": "StaffController: status",
+        "x-authorization": "hasRole('SHOP_ADMIN')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountStatus"
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/ai/persons/validate": {
+      "post": {
+        "operationId": "AiController_validatePerson",
+        "summary": "AiController: validatePerson",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Person"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/ai/routing/preview": {
+      "post": {
+        "operationId": "AiController_routing",
+        "summary": "AiController: routing",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Route"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/assets": {
+      "post": {
+        "operationId": "AiController_upload",
+        "summary": "AiController: upload",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "required": [
+                  "file",
+                  "role",
+                  "consent"
+                ],
+                "type": "object",
+                "properties": {
+                  "consent": {
+                    "type": "boolean"
+                  },
+                  "file": {
+                    "format": "binary",
+                    "type": "string"
+                  },
+                  "role": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/assets/{id}": {
+      "delete": {
+        "operationId": "AiController_deleteAsset",
+        "summary": "AiController: deleteAsset",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/assets/{id}/content": {
+      "get": {
+        "operationId": "AiController_content",
+        "summary": "AiController: content",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "image/png": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/auth/forgot-password": {
+      "post": {
+        "operationId": "PasswordResetController_forgot",
+        "summary": "PasswordResetController: forgot",
+        "security": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Forgot"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "operationId": "AuthController_login",
+        "summary": "AuthController: login",
+        "security": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Login"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "operationId": "AuthController_logout",
+        "summary": "AuthController: logout",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Token"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "operationId": "AuthController_refresh",
+        "summary": "AuthController: refresh",
+        "security": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Token"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/auth/register": {
+      "post": {
+        "operationId": "AuthController_register",
+        "summary": "AuthController: register",
+        "security": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Register"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/auth/reset-password": {
+      "post": {
+        "operationId": "PasswordResetController_reset",
+        "summary": "PasswordResetController: reset",
+        "security": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Reset"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/cart": {
+      "get": {
+        "operationId": "OrderController_cart",
+        "summary": "OrderController: cart",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/cart/items": {
+      "put": {
+        "operationId": "OrderController_cartItem",
+        "summary": "OrderController: cartItem",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Item"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/cart/items/{id}": {
+      "delete": {
+        "operationId": "OrderController_remove",
+        "summary": "OrderController: remove",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/catalog/assets/{id}/content": {
+      "get": {
+        "operationId": "AiController_catalogContent",
+        "summary": "AiController: catalogContent",
+        "security": [],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "image/png": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/catalog/categories": {
+      "get": {
+        "operationId": "CatalogController_categories",
+        "summary": "CatalogController: categories",
+        "security": [],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/catalog/filters": {
+      "get": {
+        "operationId": "CatalogController_filters",
+        "summary": "CatalogController: filters",
+        "security": [],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/catalog/images/{id}/content": {
+      "get": {
+        "operationId": "AiController_catalogImage",
+        "summary": "AiController: catalogImage",
+        "security": [],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          },
+          {
+            "name": "kind",
+            "schema": {
+              "type": "string",
+              "default": "original"
+            },
+            "required": false,
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "image/png": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/catalog/products": {
+      "get": {
+        "operationId": "CatalogController_products",
+        "summary": "CatalogController: products",
+        "security": [],
+        "parameters": [
+          {
+            "name": "q",
+            "schema": {
+              "type": "string",
+              "default": ""
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "categoryId",
+            "schema": {
+              "type": "string",
+              "default": ""
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "size",
+            "schema": {
+              "type": "string",
+              "default": ""
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "color",
+            "schema": {
+              "type": "string",
+              "default": ""
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "minPrice",
+            "schema": {
+              "type": "number",
+              "default": 0
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "maxPrice",
+            "schema": {
+              "type": "number",
+              "default": 9999999999
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "material",
+            "schema": {
+              "type": "string",
+              "default": ""
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "fit",
+            "schema": {
+              "type": "string",
+              "default": ""
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "pattern",
+            "schema": {
+              "type": "string",
+              "default": ""
+            },
+            "required": false,
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/catalog/products/{id}": {
+      "get": {
+        "operationId": "CatalogController_product",
+        "summary": "CatalogController: product",
+        "security": [],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/catalog/products/{id}/reviews": {
+      "get": {
+        "operationId": "InteractionController_reviews",
+        "summary": "InteractionController: reviews",
+        "security": [],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          },
+          {
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "size",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            },
+            "required": false,
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/contract": {
+      "get": {
+        "operationId": "ContractController_contract",
+        "summary": "ContractController: contract",
+        "security": [],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/convert/address": {
+      "post": {
+        "operationId": "LocationController_convert",
+        "summary": "LocationController: convert",
+        "security": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Conversion"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/convert/batch": {
+      "post": {
+        "operationId": "LocationController_batch",
+        "summary": "LocationController: batch",
+        "security": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Batch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/districts/{code}": {
+      "get": {
+        "operationId": "LocationController_district",
+        "summary": "LocationController: district",
+        "security": [],
+        "parameters": [
+          {
+            "name": "code",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unit"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/districts/{code}/wards": {
+      "get": {
+        "operationId": "LocationController_oldWards",
+        "summary": "LocationController: oldWards",
+        "security": [],
+        "parameters": [
+          {
+            "name": "code",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Unit"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/full-address": {
+      "get": {
+        "operationId": "LocationController_full",
+        "summary": "LocationController: full",
+        "security": [],
+        "parameters": [
+          {
+            "name": "provinceCode",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "query"
+          },
+          {
+            "name": "districtCode",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "query"
+          },
+          {
+            "name": "wardCode",
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "street",
+            "schema": {
+              "type": "string",
+              "default": ""
+            },
+            "required": false,
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "operationId": "AuthController_me",
+        "summary": "AuthController: me",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      },
+      "patch": {
+        "operationId": "AuthController_profile",
+        "summary": "AuthController: profile",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Profile"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/me/addresses": {
+      "get": {
+        "operationId": "AuthController_addresses",
+        "summary": "AuthController: addresses",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      },
+      "post": {
+        "operationId": "AuthController_address",
+        "summary": "AuthController: address",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Address"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/me/addresses/{id}": {
+      "delete": {
+        "operationId": "AuthController_deleteAddress",
+        "summary": "AuthController: deleteAddress",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      },
+      "put": {
+        "operationId": "AuthController_updateAddress",
+        "summary": "AuthController: updateAddress",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Address"
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/me/password": {
+      "post": {
+        "operationId": "AuthController_password",
+        "summary": "AuthController: password",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Password"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/merge-history/district/{code}": {
+      "get": {
+        "operationId": "LocationController_districtHistory",
+        "summary": "LocationController: districtHistory",
+        "security": [],
+        "parameters": [
+          {
+            "name": "code",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/merge-history/province/{code}": {
+      "get": {
+        "operationId": "LocationController_provinceHistory",
+        "summary": "LocationController: provinceHistory",
+        "security": [],
+        "parameters": [
+          {
+            "name": "code",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Unit"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/merge-history/ward/{code}": {
+      "get": {
+        "operationId": "LocationController_wardHistory",
+        "summary": "LocationController: wardHistory",
+        "security": [],
+        "parameters": [
+          {
+            "name": "code",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/new-full-address": {
+      "get": {
+        "operationId": "LocationController_newFull",
+        "summary": "LocationController: newFull",
+        "security": [],
+        "parameters": [
+          {
+            "name": "provinceCode",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "query"
+          },
+          {
+            "name": "wardCode",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "query"
+          },
+          {
+            "name": "street",
+            "schema": {
+              "type": "string",
+              "default": ""
+            },
+            "required": false,
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/new-provinces": {
+      "get": {
+        "operationId": "LocationController_newProvinces",
+        "summary": "LocationController: newProvinces",
+        "security": [],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Unit"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/new-provinces/{code}": {
+      "get": {
+        "operationId": "LocationController_newProvince",
+        "summary": "LocationController: newProvince",
+        "security": [],
+        "parameters": [
+          {
+            "name": "code",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unit"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/new-provinces/{code}/wards": {
+      "get": {
+        "operationId": "LocationController_newWards",
+        "summary": "LocationController: newWards",
+        "security": [],
+        "parameters": [
+          {
+            "name": "code",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Unit"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/new-wards/{code}": {
+      "get": {
+        "operationId": "LocationController_newWard",
+        "summary": "LocationController: newWard",
+        "security": [],
+        "parameters": [
+          {
+            "name": "code",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unit"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/notifications": {
+      "get": {
+        "operationId": "InteractionController_notifications",
+        "summary": "InteractionController: notifications",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "unread",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "size",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            },
+            "required": false,
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/{id}/read": {
+      "post": {
+        "operationId": "InteractionController_read",
+        "summary": "InteractionController: read",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/orders": {
+      "get": {
+        "operationId": "OrderController_list",
+        "summary": "OrderController: list",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "size",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            },
+            "required": false,
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      },
+      "post": {
+        "operationId": "OrderController_create",
+        "summary": "OrderController: create",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Checkout"
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/orders/{id}": {
+      "get": {
+        "operationId": "OrderController_detail",
+        "summary": "OrderController: detail",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/orders/{id}/cancel": {
+      "post": {
+        "operationId": "OrderController_cancel",
+        "summary": "OrderController: cancel",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/pos/customers": {
+      "get": {
+        "operationId": "StaffController_customer",
+        "summary": "StaffController: customer",
+        "x-authorization": "hasAnyRole('SHOP_ADMIN','STAFF_CASHIER')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "phone",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/pos/orders": {
+      "post": {
+        "operationId": "StaffController_pos",
+        "summary": "StaffController: pos",
+        "x-authorization": "hasAnyRole('SHOP_ADMIN','STAFF_CASHIER')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Checkout"
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/pos/orders/{id}/receipt": {
+      "get": {
+        "operationId": "StaffLookupController_receipt",
+        "summary": "StaffLookupController: receipt",
+        "x-authorization": "hasAnyRole('SHOP_ADMIN','STAFF_CASHIER')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/pos/shifts": {
+      "get": {
+        "operationId": "StaffLookupController_shifts",
+        "summary": "StaffLookupController: shifts",
+        "x-authorization": "hasAnyRole('SHOP_ADMIN','STAFF_CASHIER')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "default": ""
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "size",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            },
+            "required": false,
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      },
+      "post": {
+        "operationId": "StaffController_open",
+        "summary": "StaffController: open",
+        "x-authorization": "hasAnyRole('SHOP_ADMIN','STAFF_CASHIER')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShiftMoney"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/pos/shifts/{id}": {
+      "get": {
+        "operationId": "StaffController_shift",
+        "summary": "StaffController: shift",
+        "x-authorization": "hasAnyRole('SHOP_ADMIN','STAFF_CASHIER')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/pos/shifts/{id}/close": {
+      "post": {
+        "operationId": "StaffController_close",
+        "summary": "StaffController: close",
+        "x-authorization": "hasAnyRole('SHOP_ADMIN','STAFF_CASHIER')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShiftMoney"
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/pos/try-on/sessions/{id}": {
+      "get": {
+        "operationId": "StaffLookupController_tryOn",
+        "summary": "StaffLookupController: tryOn",
+        "x-authorization": "hasAnyRole('SHOP_ADMIN','STAFF_CASHIER')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          },
+          {
+            "name": "phone",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/profile": {
+      "get": {
+        "operationId": "LocationController_profile",
+        "summary": "LocationController: profile",
+        "security": [],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/promotions": {
+      "get": {
+        "operationId": "OrderController_promotions",
+        "summary": "OrderController: promotions",
+        "security": [],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/promotions/quote": {
+      "post": {
+        "operationId": "OrderController_quote",
+        "summary": "OrderController: quote",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Checkout"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/provinces": {
+      "get": {
+        "operationId": "LocationController_provinces",
+        "summary": "LocationController: provinces",
+        "security": [],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Unit"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/provinces/{code}": {
+      "get": {
+        "operationId": "LocationController_province",
+        "summary": "LocationController: province",
+        "security": [],
+        "parameters": [
+          {
+            "name": "code",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unit"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/provinces/{code}/districts": {
+      "get": {
+        "operationId": "LocationController_districts",
+        "summary": "LocationController: districts",
+        "security": [],
+        "parameters": [
+          {
+            "name": "code",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Unit"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/reviews": {
+      "post": {
+        "operationId": "InteractionController_review",
+        "summary": "InteractionController: review",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Review"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/scoring/evaluate": {
+      "post": {
+        "operationId": "ScoringController_evaluate",
+        "summary": "ScoringController: evaluate",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Outfit"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/scoring/recommendations": {
+      "get": {
+        "operationId": "ScoringController_recommend",
+        "summary": "ScoringController: recommend",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "variantId",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "query"
+          },
+          {
+            "name": "tucked",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "required": false,
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/scoring/recommendations/{id}/interaction": {
+      "patch": {
+        "operationId": "RecommendationController_interact",
+        "summary": "RecommendationController: interact",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Interaction"
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/scoring/rules": {
+      "get": {
+        "operationId": "ScoringController_rules",
+        "summary": "ScoringController: rules",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/scoring/sessions/{id}": {
+      "post": {
+        "operationId": "ScoringController_sessionScore",
+        "summary": "ScoringController: sessionScore",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Outfit"
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/scoring/sessions/{id}/recommendations": {
+      "get": {
+        "operationId": "RecommendationController_list",
+        "summary": "RecommendationController: list",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      },
+      "post": {
+        "operationId": "RecommendationController_generate",
+        "summary": "RecommendationController: generate",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          },
+          {
+            "name": "tucked",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "required": false,
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/search-address": {
+      "get": {
+        "operationId": "LocationController_search",
+        "summary": "LocationController: search",
+        "security": [],
+        "parameters": [
+          {
+            "name": "q",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "query"
+          },
+          {
+            "name": "provinceCode",
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "required": false,
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/search-new-address": {
+      "get": {
+        "operationId": "LocationController_searchNew__api_v1_search_new_address",
+        "summary": "LocationController: searchNew",
+        "security": [],
+        "parameters": [
+          {
+            "name": "q",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "query"
+          },
+          {
+            "name": "provinceCode",
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "required": false,
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/staff/inventory/adjustments": {
+      "post": {
+        "operationId": "StaffController_adjust",
+        "summary": "StaffController: adjust",
+        "x-authorization": "hasAnyRole('SHOP_ADMIN','STAFF_WAREHOUSE')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Adjustment"
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/staff/inventory/low-stock": {
+      "get": {
+        "operationId": "StaffController_lowStock",
+        "summary": "StaffController: lowStock",
+        "x-authorization": "hasAnyRole('SHOP_ADMIN','STAFF_CASHIER','STAFF_WAREHOUSE')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "threshold",
+            "schema": {
+              "type": "integer",
+              "default": 5
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "size",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            },
+            "required": false,
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/staff/inventory/movements": {
+      "get": {
+        "operationId": "StaffController_movements",
+        "summary": "StaffController: movements",
+        "x-authorization": "hasAnyRole('SHOP_ADMIN','STAFF_WAREHOUSE')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "variantId",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "query"
+          },
+          {
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "size",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            },
+            "required": false,
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/staff/orders": {
+      "get": {
+        "operationId": "StaffController_staffOrders",
+        "summary": "StaffController: staffOrders",
+        "x-authorization": "hasAnyRole('SHOP_ADMIN','STAFF_WAREHOUSE','STAFF_CASHIER','STAFF_SHIPPER')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "size",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            },
+            "required": false,
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/staff/orders/{id}": {
+      "get": {
+        "operationId": "StaffController_staffOrder",
+        "summary": "StaffController: staffOrder",
+        "x-authorization": "hasAnyRole('SHOP_ADMIN','STAFF_WAREHOUSE','STAFF_CASHIER','STAFF_SHIPPER')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/staff/orders/{id}/assign": {
+      "post": {
+        "operationId": "StaffController_assign",
+        "summary": "StaffController: assign",
+        "x-authorization": "hasAnyRole('SHOP_ADMIN','STAFF_WAREHOUSE')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Assignment"
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/staff/orders/{id}/deliver": {
+      "post": {
+        "operationId": "StaffController_deliver",
+        "summary": "StaffController: deliver",
+        "x-authorization": "hasRole('STAFF_SHIPPER')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/staff/orders/{id}/delivery-failed": {
+      "post": {
+        "operationId": "StaffController_failed",
+        "summary": "StaffController: failed",
+        "x-authorization": "hasRole('STAFF_SHIPPER')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/staff/orders/{id}/pack": {
+      "post": {
+        "operationId": "StaffController_pack",
+        "summary": "StaffController: pack",
+        "x-authorization": "hasAnyRole('SHOP_ADMIN','STAFF_WAREHOUSE')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/staff/orders/{id}/pick-list": {
+      "get": {
+        "operationId": "StaffLookupController_pickList",
+        "summary": "StaffLookupController: pickList",
+        "x-authorization": "hasAnyRole('SHOP_ADMIN','STAFF_WAREHOUSE')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/staff/orders/{id}/receive-return": {
+      "post": {
+        "operationId": "StaffController_returned",
+        "summary": "StaffController: returned",
+        "x-authorization": "hasAnyRole('SHOP_ADMIN','STAFF_WAREHOUSE')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/staff/product-filters": {
+      "get": {
+        "operationId": "CatalogController_staffFilters",
+        "summary": "CatalogController: staffFilters",
+        "x-authorization": "hasAnyRole('SHOP_ADMIN','STAFF_CASHIER','STAFF_WAREHOUSE','STAFF_SHIPPER')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/staff/products": {
+      "get": {
+        "operationId": "CatalogController_adminProducts__api_v1_staff_products",
+        "summary": "CatalogController: adminProducts",
+        "x-authorization": "hasAnyRole('SHOP_ADMIN','STAFF_CASHIER','STAFF_WAREHOUSE','STAFF_SHIPPER')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "size",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "q",
+            "schema": {
+              "type": "string",
+              "default": ""
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "categoryId",
+            "schema": {
+              "type": "string",
+              "default": ""
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "color",
+            "schema": {
+              "type": "string",
+              "default": ""
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "material",
+            "schema": {
+              "type": "string",
+              "default": ""
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "fit",
+            "schema": {
+              "type": "string",
+              "default": ""
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "pattern",
+            "schema": {
+              "type": "string",
+              "default": ""
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "default": ""
+            },
+            "required": false,
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/staff/products/{id}": {
+      "get": {
+        "operationId": "CatalogController_adminProduct__api_v1_staff_products__id_",
+        "summary": "CatalogController: adminProduct",
+        "x-authorization": "hasAnyRole('SHOP_ADMIN','STAFF_CASHIER','STAFF_WAREHOUSE','STAFF_SHIPPER')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/staff/variants/by-sku": {
+      "get": {
+        "operationId": "StaffController_barcode",
+        "summary": "StaffController: barcode",
+        "x-authorization": "hasAnyRole('SHOP_ADMIN','STAFF_CASHIER','STAFF_WAREHOUSE')",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "sku",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/suggest": {
+      "get": {
+        "operationId": "LocationController_searchNew__api_v1_suggest",
+        "summary": "LocationController: searchNew",
+        "security": [],
+        "parameters": [
+          {
+            "name": "q",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "query"
+          },
+          {
+            "name": "provinceCode",
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "required": false,
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/try-on/sessions": {
+      "get": {
+        "operationId": "AiController_history",
+        "summary": "AiController: history",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "required": false,
+            "in": "query"
+          },
+          {
+            "name": "size",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            },
+            "required": false,
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      },
+      "post": {
+        "operationId": "AiController_create",
+        "summary": "AiController: create",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TryOn"
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/try-on/sessions/{id}": {
+      "get": {
+        "operationId": "AiController_session",
+        "summary": "AiController: session",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/try-on/sessions/{id}/cancel": {
+      "post": {
+        "operationId": "AiController_cancel",
+        "summary": "AiController: cancel",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/try-on/sessions/{id}/retry": {
+      "post": {
+        "operationId": "AiController_retry",
+        "summary": "AiController: retry",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    },
+    "/api/v1/wards/{code}": {
+      "get": {
+        "operationId": "LocationController_oldWard",
+        "summary": "LocationController: oldWard",
+        "security": [],
+        "parameters": [
+          {
+            "name": "code",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Lỗi có mã ổn định"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unit"
+                }
+              }
+            },
+            "description": "Thành công; xem hướng dẫn theo nghiệp vụ."
+          }
+        }
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080"
+    }
+  ]
+}

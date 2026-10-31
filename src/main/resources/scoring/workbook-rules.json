@@ -1,0 +1,778 @@
+{
+  "source": "ScoringTable.xlsx",
+  "sheets": [
+    [
+      [
+        "Thang Điểm (S)",
+        "Mã Phân Hạng",
+        "Tên Hiển Thị",
+        "Trực Quan UI",
+        "Ý Nghĩa Thời Trang",
+        "Hành Vi Hệ Thống & Hướng Xử Lý"
+      ],
+      [
+        "85 – 100",
+        "RECOMMENDED",
+        "Rất Tôn Dáng & Hài Hòa",
+        "Badge Xanh Lục Bảo \n(Emerald Green)",
+        "Set đồ chuẩn mực, tôn vinh vóc dáng, màu sắc và tỉ lệ đỉnh cao.",
+        "Chúc mừng khách hàng. \nHiển thị nút kêu gọi hành động: \"Chọn size và Mua ngay set đồ này\"."
+      ],
+      [
+        "70 – 84",
+        "ACCEPTABLE",
+        "Khá Hài Hòa / Ổn Định",
+        "Badge Xanh Dương Nhạt \n(Ocean Blue)",
+        "Set đồ an toàn, ưa nhìn, mặc đẹp trong đời sống thường ngày.",
+        "Đánh giá tốt. \nCó thể hiển thị thêm 1 gợi ý phụ kiện hoặc quần/váy để nâng điểm lên xuất sắc (>90)."
+      ],
+      [
+        "50 – 69",
+        "NEEDS_ADJUSTMENT",
+        "Cần Điều Chỉnh / Chưa Tôn Dáng",
+        "Badge Vàng Cam Cảnh Báo \n(Amber)",
+        "Set đồ đang bị lỗi ở chiếc quần hoặc chiếc áo \n(chia đôi người hoặc màu lệch tông).",
+        "KÍCH HOẠT SMART CROSS-SELLING: Chỉ rõ chi tiết điểm yếu và quét kho shop \nhiển thị ngay món đồ thay thế để nâng điểm lên >= 90."
+      ],
+      [
+        "0 – 49",
+        "NOT_RECOMMENDED",
+        "Lệch Tông / Mất Cân Đối",
+        "Badge Đỏ Cảnh Báo \n(Rose Red)",
+        "Thảm họa thời trang: xung đột màu sắc gắt hoặc nuốt trọn vóc dáng.",
+        "Cảnh báo lịch sự. Khuyên khách không nên diện set đồ này ra ngoài. \nĐề xuất đổi sang bản phối chuẩn mực khác của shop."
+      ]
+    ],
+    [
+      [
+        "Mã Tỉ Lệ",
+        "Cặp Danh mục Phối đồ",
+        "Chiều Dài Thân Trên",
+        "Cạp Quần / Váy",
+        "Kiểu Mặc Thực Tế",
+        "Điểm Tỉ Lệ \n(S_{proportion})",
+        "Đánh Giá Chuyên Gia Stylist"
+      ],
+      [
+        "PROP_01",
+        "Áo sơ mi / Áo polo + Quần âu dài",
+        "Ngắn / Vừa vặn",
+        "Cạp cao trên rốn",
+        "Sơ vin đóng thùng gọn gàng",
+        "100",
+        "Tỉ lệ vàng 1/3 - 2/3. \nChân trông dài miên man, dáng người thanh mảnh, cực kỳ thanh lịch."
+      ],
+      [
+        "PROP_02",
+        "Áo croptop + Quần jeans ống suông",
+        "Ngắn trên rốn",
+        "Cạp cao",
+        "Áo lửng khoe eo buông tự nhiên",
+        "100",
+        "Tỉ lệ 1/3 - 2/3. \nVừa năng động vừa hack dáng tuyệt đỉnh cho các bạn nữ."
+      ],
+      [
+        "PROP_03",
+        "Áo croptop + Chân váy midi chữ A",
+        "Ngắn trên rốn",
+        "Cạp cao",
+        "Áo lửng kết hợp chân váy dài",
+        "98",
+        "Dáng người thanh thoát, tôn trọn vòng eo và che khuyết điểm bắp chân to."
+      ],
+      [
+        "PROP_04",
+        "Áo blazer dáng dài + Chân váy ngắn",
+        "Dài trùm mông (2/3)",
+        "Cạp vừa / ẩn",
+        "Mặc mở cúc hoặc khoác hờ",
+        "95",
+        "Tỉ lệ 2/3 - 1/3. \nPhong cách giấu quần thời thượng, khoe trọn cặp chân thon dài."
+      ],
+      [
+        "PROP_05",
+        "Áo sơ mi oversize + Quần short lửng",
+        "Dài trùm qua hông",
+        "Cạp vừa",
+        "Thả suông cá tính",
+        "93",
+        "Tỉ lệ 2/3 - 1/3. \nChe khuyết điểm hông to và mỡ bụng cực tốt, phong cách chic năng động."
+      ],
+      [
+        "PROP_06",
+        "Đầm liền thân chiết eo cao",
+        "Liền thân",
+        "Chiết eo cao trên rốn",
+        "Liền mạch theo trục dọc",
+        "92",
+        "Trục dọc liền mạch, tôn đường cong chữ S, tạo cảm giác người cao ráo bất ngờ."
+      ],
+      [
+        "PROP_07",
+        "Áo thun cổ tròn + Quần jeans suông",
+        "Vừa vặn ngang hông",
+        "Cạp vừa ngang rốn",
+        "Buông tự nhiên thường ngày",
+        "82",
+        "Tỉ lệ 2/5 - 3/5. \nChuẩn casual hàng ngày, tự nhiên, thoải mái, cân đối ổn định."
+      ],
+      [
+        "PROP_08",
+        "Áo polo suông + Quần kaki cạp vừa",
+        "Vừa vặn",
+        "Cạp vừa",
+        "Buông tự nhiên đi làm/đi chơi",
+        "80",
+        "Đứng đắn, chuẩn mực thường nhật nhưng không có hiệu ứng hack dáng kéo dài chân."
+      ],
+      [
+        "PROP_09",
+        "Áo thun form dài + Quần jeans cạp trễ",
+        "Dài trùm mông",
+        "Cạp trễ dưới rốn",
+        "Buông thụng tự do",
+        "55",
+        "Tỉ lệ 1/1. \nCắt đôi cơ thể thành 2 khúc, lưng dài ngoẵng và chân bị ngắn lại rõ rệt."
+      ],
+      [
+        "PROP_10",
+        "Áo sơ mi lửng lơ + Quần lửng ngố",
+        "Dài ngang mông",
+        "Cạp trễ ngang xương chậu",
+        "Buông tự do",
+        "50",
+        "Vừa chia đôi người vừa bị gấu quần ngố cắt đoạn bắp chân, khiến người trông lùn tịt."
+      ],
+      [
+        "PROP_11",
+        "Áo hoodie oversize + Quần ống thụng",
+        "Dài qua mông rất nhiều",
+        "Cạp trễ / thụng",
+        "Buông thùng thình",
+        "42",
+        "Nuốt trọn vóc dáng, mất hết tỷ lệ cơ thể, tạo cảm giác người mặc bị lùn đi 5-10 cm"
+      ],
+      [
+        "PROP_12",
+        "Áo khoác dài quá gối + Quần lửng thụng",
+        "Dài chạm gối",
+        "Cạp trễ",
+        "Thụng dài quét đất",
+        "35",
+        "Thảm họa tỉ lệ: phần trên nuốt trọn phần dưới, cơ thể trông như bị thu ngắn lại."
+      ]
+    ],
+    [
+      [
+        "Nhóm Màu Áo \\ Màu Quần",
+        "Trắng \n(#FFFFFF)",
+        "Đen \n(#1A1A1A)",
+        "Be/Kem \n(#E6D7C3)",
+        "Xám Ghi \n(#808080)",
+        "Xanh Navy \n(#1B2A4A)",
+        "Nâu Đất \n(#5C4033)",
+        "Xanh Rêu \n(#4A5D4E)",
+        "Cam Đất \n(#C06C47)",
+        "Xanh Pastel \n(#A7C7E7)",
+        "Hồng Pastel \n(#F4C2C2)",
+        "Đỏ Cờ \n(#E60000)",
+        "Xanh Neon \n(#39FF14)"
+      ],
+      [
+        "Trắng (#FFFFFF)",
+        "92",
+        "100",
+        "98",
+        "96",
+        "100",
+        "94",
+        "92",
+        "92",
+        "96",
+        "96",
+        "88",
+        "50"
+      ],
+      [
+        "Đen (#1A1A1A)",
+        "100",
+        "92",
+        "96",
+        "94",
+        "82",
+        "88",
+        "90",
+        "94",
+        "92",
+        "94",
+        "96",
+        "60"
+      ],
+      [
+        "Be / Kem (#E6D7C3)",
+        "98",
+        "96",
+        "90",
+        "92",
+        "95",
+        "100",
+        "94",
+        "96",
+        "92",
+        "90",
+        "70",
+        "35"
+      ],
+      [
+        "Xám Ghi (#808080)",
+        "96",
+        "94",
+        "92",
+        "88",
+        "94",
+        "85",
+        "88",
+        "92",
+        "92",
+        "92",
+        "85",
+        "40"
+      ],
+      [
+        "Xanh Navy (#1B2A4A)",
+        "100",
+        "82",
+        "95",
+        "94",
+        "90",
+        "92",
+        "78",
+        "95",
+        "100",
+        "85",
+        "78",
+        "30"
+      ],
+      [
+        "Xanh Coban (#0047AB)",
+        "100",
+        "94",
+        "96",
+        "94",
+        "82",
+        "80",
+        "68",
+        "72",
+        "88",
+        "68",
+        "45",
+        "25"
+      ],
+      [
+        "Đỏ Đô / Burgundy (#800020)",
+        "98",
+        "100",
+        "96",
+        "92",
+        "88",
+        "90",
+        "75",
+        "82",
+        "78",
+        "82",
+        "50",
+        "20"
+      ],
+      [
+        "Cam Đất (#C06C47)",
+        "92",
+        "94",
+        "96",
+        "92",
+        "95",
+        "92",
+        "100",
+        "82",
+        "72",
+        "68",
+        "40",
+        "20"
+      ],
+      [
+        "Xanh Rêu (#4A5D4E)",
+        "92",
+        "92",
+        "94",
+        "90",
+        "78",
+        "92",
+        "82",
+        "100",
+        "75",
+        "70",
+        "40",
+        "20"
+      ],
+      [
+        "Vàng Mù Tạt (#E1AD01)",
+        "94",
+        "96",
+        "92",
+        "94",
+        "100",
+        "90",
+        "85",
+        "80",
+        "72",
+        "58",
+        "45",
+        "20"
+      ],
+      [
+        "Xanh Pastel (#A7C7E7)",
+        "96",
+        "92",
+        "92",
+        "94",
+        "100",
+        "82",
+        "78",
+        "74",
+        "88",
+        "96",
+        "45",
+        "25"
+      ],
+      [
+        "Hồng Pastel (#F4C2C2)",
+        "96",
+        "94",
+        "94",
+        "92",
+        "90",
+        "88",
+        "72",
+        "70",
+        "96",
+        "85",
+        "45",
+        "20"
+      ],
+      [
+        "Đỏ Cờ (#E60000)",
+        "88",
+        "96",
+        "78",
+        "86",
+        "78",
+        "68",
+        "40",
+        "40",
+        "45",
+        "45",
+        "35",
+        "15"
+      ],
+      [
+        "Xanh Neon (#39FF14)",
+        "50",
+        "60",
+        "35",
+        "40",
+        "30",
+        "25",
+        "20",
+        "20",
+        "25",
+        "20",
+        "15",
+        "10"
+      ]
+    ],
+    [
+      [
+        "Mã Quy Tắc",
+        "Phân Loại Nguyên Tắc",
+        "Màu Chủ Đạo (Màu 1)",
+        "Màu Thứ Cấp (Màu 2)",
+        "Màu Thứ Ba (Màu 3)",
+        "Màu Thứ Tư \n(Màu 4 / Phụ Kiện)",
+        "Tỉ Lệ Diện Tích Đề Xuất",
+        "Điểm Màu \n(S_color)",
+        "Đánh Giá Chuyên Gia Stylist"
+      ],
+      [
+        "MULTI_3_01",
+        "Triadic (Tam giác đều)",
+        "Xanh Navy (#1B2A4A)",
+        "Đỏ Đô Burgundy (#800020)",
+        "Vàng Mù Tạt (#E1AD01)",
+        "-",
+        "60% - 30% - 10%",
+        "100",
+        "Tam giác đều kinh điển của phong cách quý tộc hoàng gia Anh (Royal Preppy). Đầy đặn, cân đối hoàn mỹ."
+      ],
+      [
+        "MULTI_3_02",
+        "Triadic Pastel Kẹo Ngọt",
+        "Xanh Baby Blue (#A7C7E7)",
+        "Hồng Phấn (#F4C2C2)",
+        "Vàng Bơ Nhạt (#FFFDD0)",
+        "-",
+        "45% - 45% - 10%",
+        "96",
+        "Ba màu pastel hạ độ bão hòa cao, tạo vẻ đẹp ngọt ngào, bay bổng và trẻ trung cho phái đẹp."
+      ],
+      [
+        "MULTI_3_03",
+        "Triadic Tươi Trẻ Mùa Hè",
+        "Xanh Coban (#0047AB)",
+        "Vàng Tươi Hạ Sắc (#F4C430)",
+        "Đỏ San Hô (#FF6F61)",
+        "-",
+        "60% - 30% - 10%",
+        "94",
+        "Năng động, rực rỡ, thích hợp cho trang phục dạo biển và hoạt động ngoại khóa ngoài trời."
+      ],
+      [
+        "MULTI_3_04",
+        "Split-Complementary",
+        "Xanh Navy Sẫm (#1B2A4A)",
+        "Cam Đất Nung (#C06C47)",
+        "Be Sữa Kem (#E6D7C3)",
+        "-",
+        "60% - 30% - 10%",
+        "100",
+        "Độ tương phản sắc nét nhưng cực kỳ êm mắt nhờ sắc be kem trung tính làm cầu nối dung hòa."
+      ],
+      [
+        "MULTI_3_05",
+        "Split-Complementary Earth Tone",
+        "Xanh Rêu Trầm (#4A5D4E)",
+        "Cam Đất (#C06C47)",
+        "Trắng Ngà (#FFFFFF)",
+        "-",
+        "50% - 35% - 15%",
+        "98",
+        "Dải màu phong cách dã ngoại Safari / Mùa thu Châu Âu, ấm áp, sâu lắng và rất tôn làn da châu Á."
+      ],
+      [
+        "MULTI_3_06",
+        "Split-Complementary Quý Phái",
+        "Tím Khói Lavender (#967BB6)",
+        "Vàng Kem Nhạt (#FFFDD0)",
+        "Be Sáng (#E6D7C3)",
+        "-",
+        "50% - 30% - 20%",
+        "96",
+        "Dịu dàng, thanh nhã, gam tím khói kết hợp vàng kem và be tạo ấn tượng nữ tính quý phái."
+      ],
+      [
+        "MULTI_3_07",
+        "Analogous (Tương đồng 3 màu)",
+        "Vàng Bơ Nhạt (#FFFDD0)",
+        "Cam Đất Ấm (#C06C47)",
+        "Nâu Hạt Dẻ (#5C4033)",
+        "-",
+        "50% - 35% - 15%",
+        "98",
+        "Ba màu cạnh nhau trên bánh xe màu chuyển tầng tự nhiên, gợi cảm giác lá thu êm dịu, ấm áp."
+      ],
+      [
+        "MULTI_3_08",
+        "Analogous Xanh Dịu Mát",
+        "Xanh Rêu Sage (#9CAF88)",
+        "Xanh Bạc Hà Mint (#A7C7E7)",
+        "Xanh Lam Pastel (#6495ED)",
+        "-",
+        "50% - 35% - 15%",
+        "96",
+        "Chuyển tiếp màu mượt mà, đem lại cảm giác tươi mát, thư thái tuyệt đối trong những ngày hè oi bức."
+      ],
+      [
+        "MULTI_3_09",
+        "Layering 3 Món: Mỏ Neo Đen - Trắng",
+        "Quần Jeans Indigo (#1B2A4A)",
+        "Áo Blazer Đen (#1A1A1A)",
+        "Áo thun Trắng (#FFFFFF)",
+        "-",
+        "40% - 35% - 25%",
+        "100",
+        "Chuẩn mực Smart Casual thành thị: Đen - Trắng làm mỏ neo cho màu quần jeans xanh kinh điển."
+      ],
+      [
+        "MULTI_3_10",
+        "Layering 3 Món: Tonal Mùa Thu",
+        "Quần Âu Trắng Kem (#FFFFFF)",
+        "Áo khoác Nâu Đất (#5C4033)",
+        "Áo len Be Sữa (#E6D7C3)",
+        "-",
+        "35% - 40% - 25%",
+        "100",
+        "Đỉnh cao của phong cách Quiet Luxury / Old Money. Chuyển tầng 3 sắc độ nâu - be - trắng kem hoàn mỹ."
+      ],
+      [
+        "MULTI_3_11",
+        "Layering 3 Món: Công Sở Thanh Lịch",
+        "Quần Tây Đen (#1A1A1A)",
+        "Áo khoác Xám Ghi (#808080)",
+        "Áo sơ mi Xanh Pastel (#A7C7E7)",
+        "-",
+        "40% - 35% - 25%",
+        "98",
+        "Chuyên nghiệp, nhã nhặn, sắc xanh pastel bên trong tạo điểm sáng bừng bừng cho khuôn mặt."
+      ],
+      [
+        "MULTI_3_12",
+        "Layering 3 Món: Tương Phản Sang Trọng",
+        "Chân Váy Đen (#1A1A1A)",
+        "Áo Blazer Đỏ Đô (#800020)",
+        "Áo sơ mi Lụa Trắng (#FFFFFF)",
+        "-",
+        "40% - 35% - 25%",
+        "100",
+        "Quyền lực, nổi bật nhưng tuyệt đối chỉn chu nhờ nền chân váy đen và áo sơ mi trắng tinh khôi."
+      ],
+      [
+        "MULTI_3_13",
+        "Monochromatic 3 Tầng Sắc Thái",
+        "Quần Jeans Navy (#1B2A4A)",
+        "Áo Denim Xanh Trung (#4682B4)",
+        "Áo thun Xanh Baby (#A7C7E7)",
+        "-",
+        "45% - 35% - 20%",
+        "98",
+        "Phối màu đơn sắc đa tầng (All-Blue Layering) cực kỳ có chiều sâu và thời thượng, khoe trọn gu thẩm mỹ."
+      ],
+      [
+        "MULTI_3_14",
+        "Neutral Anchor + Điểm Nhấn Nổi",
+        "Quần Âu Đen (#1A1A1A)",
+        "Áo thun Trắng (#FFFFFF)",
+        "Áo khoác Vàng Mù Tạt (#E1AD01)",
+        "-",
+        "40% - 30% - 30%",
+        "98",
+        "Hai màu trung tính Đen - Trắng giữ vai trò mỏ neo cho chiếc áo khoác vàng mù tạt tỏa sáng rạng rỡ."
+      ],
+      [
+        "MULTI_4_01",
+        "Tetradic (Bộ bốn Cân Bằng)",
+        "Be Sữa Kem (#E6D7C3)",
+        "Xanh Navy (#1B2A4A)",
+        "Nâu Hạt Dẻ (#5C4033)",
+        "Cam Đất (#C06C47)",
+        "40% - 30% - 20% - 10%",
+        "95",
+        "Hai cặp bổ túc hạ tông (Navy-Cam và Be-Nâu) lồng ghép khéo léo trong set đồ thu đông nhiều lớp."
+      ],
+      [
+        "MULTI_4_02",
+        "Tetradic Sành Điệu Đô Thị",
+        "Áo khoác Xanh Rêu (#4A5D4E)",
+        "Quần Nâu Đất (#5C4033)",
+        "Áo trong Trắng (#FFFFFF)",
+        "Khăn/Túi Đỏ Đô (#800020)",
+        "40% - 30% - 20% - 10%",
+        "96",
+        "Phối màu 4 sắc thái đậm chất cổ điển châu Âu, có sắc trắng làm mỏ neo mở sáng."
+      ],
+      [
+        "MULTI_4_03",
+        "Tetradic Pastel Mùa Xuân",
+        "Váy Liền Hồng Phấn (#F4C2C2)",
+        "Áo khoác Xanh Baby (#A7C7E7)",
+        "Khăn Lụa Vàng Bơ (#FFFDD0)",
+        "Túi/Giày Mint (#98FF98)",
+        "45% - 35% - 10% - 10%",
+        "92",
+        "4 màu pastel dịu nhẹ giao thoa, ngọt ngào và bay bổng cho trang phục du xuân chụp ảnh."
+      ],
+      [
+        "MULTI_4_04",
+        "Tetradic Smart Chic Hiện Đại",
+        "Quần Âu Xám Ghi (#808080)",
+        "Áo Blazer Navy (#1B2A4A)",
+        "Áo trong Trắng (#FFFFFF)",
+        "Cà Vạt Đỏ Rượu (#800020)",
+        "35% - 35% - 20% - 10%",
+        "98",
+        "Chuẩn mực âu phục quốc tế cao cấp, sắc sảo, lịch thiệp và quyền lực tuyệt đối."
+      ],
+      [
+        "MULTI_ERR_01",
+        "Xung Đột 3 Màu Nóng Gắt",
+        "Đỏ Cờ (#E60000)",
+        "Cam Chói (#FF6600)",
+        "Vàng Tươi (#FFFF00)",
+        "-",
+        "40% - 35% - 25%",
+        "35",
+        "Lỗi Nặng (Phạt -25đ): 3 màu nóng bão hòa cao tranh chấp dữ dội, không có màu trung tính làm dịu."
+      ],
+      [
+        "MULTI_ERR_02",
+        "U Ám Xỉn Màu (Thiếu Tương Phản)",
+        "Nâu Sẫm Bùn (#3E2723)",
+        "Xanh Rêu Đục (#2E3A2F)",
+        "Xám Chuột Xỉn (#4E4E4E)",
+        "-",
+        "40% - 35% - 25%",
+        "45",
+        "Lỗi Vừa (Phạt -15đ): 3 màu tối xỉn không phân định được ranh giới thân người, tạo cảm giác cũ kỹ."
+      ],
+      [
+        "MULTI_ERR_03",
+        "Thảm Họa 4 Màu Hỗn Loạn",
+        "Đỏ Cờ (#E60000)",
+        "Xanh Lá Tươi (#00FF00)",
+        "Vàng Chanh (#FFFF00)",
+        "Tím Cẩm (#8A2BE2)",
+        "25% - 25% - 25% - 25%",
+        "15",
+        "Lỗi Cực Nặng (Phạt -35đ): 4 màu nguyên bản đối đầu nhau, gây sốc và nhức mắt người đối diện."
+      ],
+      [
+        "MULTI_ERR_04",
+        "Xung Đột Màu Neon Đa Sắc",
+        "Xanh Lá Neon (#39FF14)",
+        "Hồng Sen Neon (#FF1493)",
+        "Vàng Chanh Neon (#CCFF00)",
+        "Cam Neon (#FF5F1F)",
+        "25% - 25% - 25% - 25%",
+        "10",
+        "Lỗi Nghiêm Trọng (Phạt -40đ): Set đồ phát quang chói mắt, gây ức chế thị giác nghiêm trọng."
+      ]
+    ],
+    [
+      [
+        "Mã Họa Tiết",
+        "Kiểu Họa Tiết Áo",
+        "Kiểu Họa Tiết Quần / Váy",
+        "Điểm Họa Tiết \n(S_{pattern})",
+        "Đánh Giá Hiệu Ứng Thị Giác & Lý Do Chấm Điểm"
+      ],
+      [
+        "PAT_01",
+        "Họa tiết hoa nhí / In hình nghệ thuật",
+        "Vải trơn màu đơn sắc",
+        "100",
+        "Quy tắc Vàng \"Statement + Canvas\": Tôn vinh họa tiết áo trở thành tâm điểm thị giác độc tôn trên nền quần trơn yên bình. \nChuẩn mực thời trang ứng dụng cao cấp."
+      ],
+      [
+        "PAT_02",
+        "Kẻ sọc dọc / Kẻ caro thanh lịch",
+        "Vải trơn màu đơn sắc",
+        "98",
+        "Năng động, thanh lịch, đường kẻ định hướng thị giác kéo dài vóc dáng gọn gàng."
+      ],
+      [
+        "PAT_03",
+        "Vải trơn màu đơn sắc",
+        "Kẻ sọc dọc / Kẻ caro thanh lịch",
+        "98",
+        "Đảo ngược quy tắc: Chiếc quần caro làm tâm điểm cá tính, áo trơn cân bằng lại hoàn hảo."
+      ],
+      [
+        "PAT_04",
+        "Vải trơn màu đơn sắc (Minimalism)",
+        "Vải trơn màu đơn sắc (Minimalism)",
+        "100",
+        "Đỉnh cao Tối giản (Minimalist Chic / Quiet Luxury): Sang trọng thuần khiết, hướng toàn bộ \nsự chú ý vào phom dáng cắt may và chất liệu vải cao cấp, trường tồn cùng thời gian."
+      ],
+      [
+        "PAT_05",
+        "Họa tiết chìm đồng điệu (Jacquard)",
+        "Họa tiết chìm đồng điệu tiệp màu",
+        "85",
+        "Cùng vân dệt chìm đồng bộ, mang cảm giác quý phái của set âu phục (Tailored Suit)."
+      ],
+      [
+        "PAT_06",
+        "Kẻ sọc tăm nhỏ (Pinstripe)",
+        "Kẻ sọc tăm nhỏ đồng bộ",
+        "82",
+        "Đồng điệu kiểu âu phục cổ điển, đòi hỏi độ vừa vặn may đo chính xác."
+      ],
+      [
+        "PAT_07",
+        "Áo in chữ slogan to bản trước ngực",
+        "Quần họa tiết sọc caro lớn",
+        "60",
+        "Hơi rối mắt: Chữ in to bản tranh chấp điểm nhìn với các ô kẻ caro của quần."
+      ],
+      [
+        "PAT_08",
+        "Họa tiết hoa to bản sặc sỡ",
+        "Quần họa tiết hoa lá to bản",
+        "40",
+        "Rối loạn thị giác: Quá nhiều chi tiết hoa lá lộn xộn khiến người nhìn bị hoa mắt (Phạt vi phạm nặng)."
+      ],
+      [
+        "PAT_09",
+        "Áo kẻ sọc ngang to dày",
+        "Quần kẻ sọc caro rực rỡ",
+        "35",
+        "Xung đột đường nét hình học: Sọc ngang đối đầu ô vuông gây ảo giác méo mó vóc dáng."
+      ]
+    ],
+    [
+      [
+        "Mã Vi Phạm",
+        "Phân Cấp Lỗi",
+        "Điểm Trừ Phạt",
+        "Hành Vi Vi Phạm & Tác Hại Thị Giác",
+        "Điều Kiện Nhận Diện Thuật Toán"
+      ],
+      [
+        "PEN_01",
+        "Nhẹ (Minor)",
+        "-5",
+        "Màu sắc giữa áo và quần hơi nhờ nhợt, thiếu điểm nhấn tương phản cần thiết để phân định eo.",
+        "S_color ∈ [60, 69] và cả hai món đều mang tông màu xỉn."
+      ],
+      [
+        "PEN_02",
+        "Nhẹ (Minor)",
+        "-8",
+        "Áo có chữ in quá to gây tranh chấp nhẹ với chất liệu quần có gân nổi.",
+        "Áo có Graphic Print to + Quần vải dệt gân nổi (Ribbed)."
+      ],
+      [
+        "PEN_03",
+        "Vừa (Moderate)",
+        "-15",
+        "Tỉ lệ chia đôi cơ thể 1/1: Áo form dài trùm mông phối cùng quần lửng cạp trễ khiến chân bị ngắn lại.",
+        "Category_top = Top Long & Length_bottom = Crop/Low waist "
+      ],
+      [
+        "PEN_04",
+        "Vừa (Moderate)",
+        "-20",
+        "Chọi hai màu nóng rực bão hòa cao không có màu trung tính dung hòa \n(ví dụ: Áo cam chói + Quần đỏ cờ).",
+        "Cả 2 màu có Saturation> 80% và khoảng cách góc trên Color Wheel nằm trong vùng cấm (30° - 60°)."
+      ],
+      [
+        "PEN_05",
+        "Nặng (Severe)",
+        "-30",
+        "Xung đột màu dạ quang Neon: Áo xanh neon chói lọi phối quần hồng sen dạ quang gây nhức mắt người nhìn.",
+        "Ít nhất một món mang màu Neon (L > 85%, S > 90%) phối cùng món đồ màu gắt khác."
+      ],
+      [
+        "PEN_06",
+        "Nặng (Severe)",
+        "-30",
+        "Xung đột họa tiết kép nghiêm trọng: Cả áo và quần đều mang hoa văn to bản sặc sỡ.",
+        "Áo có họa tiết Heavy_Pattern + Quần có họa tiết Heavy_Pattern."
+      ],
+      [
+        "PEN_07",
+        "Nặng (Severe)",
+        "-35",
+        "Nuốt dáng toàn diện: Áo hoodie/blazer dài quá gối trùm ra ngoài quần thụng lùng bùng quét đất.",
+        "Thân trên che phủ quá 70% chiều cao tổng thể + Quần rộng thụng buông thõng."
+      ]
+    ]
+  ]
+}

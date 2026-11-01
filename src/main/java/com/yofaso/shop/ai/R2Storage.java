@@ -31,11 +31,17 @@ public class R2Storage implements AutoCloseable {
   }
   public String upload(String key, byte[] bytes) {
     Problem.require(client!=null,503,"R2_NOT_CONFIGURED","Cấu hình R2 trước khi đồng bộ kết quả catalog thật.");
-    Problem.require(key.matches("catalog/products/[A-Za-z0-9_/-]+[.]png") && !key.contains(".."),500,"R2_KEY_INVALID","Key R2 không hợp lệ.");
+    Problem.require((key.matches("catalog/products/[A-Za-z0-9_/-]+[.]png") || key.matches("avatars/[A-Za-z0-9_/-]+[.]png")) && !key.contains(".."),500,"R2_KEY_INVALID","Key R2 không hợp lệ.");
     try {
       client.putObject(PutObjectRequest.builder().bucket(bucket).key(key).contentType("image/png").build(),RequestBody.fromBytes(bytes));
       return key;
-    } catch (Exception e) { throw new Problem(503,"R2_UPLOAD_FAILED","Chưa upload được ảnh catalog lên R2; tác vụ sẽ đối soát lại."); }
+    } catch (Exception e) { throw new Problem(503,"R2_UPLOAD_FAILED","Chưa upload được ảnh lên R2; tác vụ sẽ đối soát lại."); }
+  }
+  public void delete(String key) {
+    if (client == null || key == null || key.isBlank()) return;
+    try {
+      client.deleteObject(software.amazon.awssdk.services.s3.model.DeleteObjectRequest.builder().bucket(bucket).key(key).build());
+    } catch (Exception ignored) {}
   }
   @jakarta.annotation.PreDestroy public void close() { if(client!=null) client.close(); }
 }

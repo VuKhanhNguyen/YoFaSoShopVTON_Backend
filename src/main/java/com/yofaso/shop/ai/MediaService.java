@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class MediaService {
   private final Path root;
+  private final Path cacheDir;
   private final Db db;
   private final AiClient ai;
   private final R2Storage r2;
@@ -24,6 +25,8 @@ public class MediaService {
       throws IOException {
     this.root = Path.of(root).toAbsolutePath().normalize();
     Files.createDirectories(this.root);
+    this.cacheDir = this.root.resolve("catalog-cache");
+    Files.createDirectories(this.cacheDir);
     this.db = db;
     this.ai = ai;
     this.r2 = r2;
@@ -170,36 +173,57 @@ public class MediaService {
   /** Đọc object key công khai trong seed SQL; host cố định từ cấu hình, không nhận URL client. */
   public byte[] catalogBytes(String key) {
     if (key != null && key.matches("[a-f0-9]{32}")) return bytes(key);
-    Problem.require(key != null && key.length() <= 500 && key.startsWith("catalog/products/")
+    Problem.require(key != null && key.length() <= 500
+        && (key.startsWith("catalog/products/") || key.startsWith("avatars/"))
         && key.matches("[A-Za-z0-9_./-]+")
         && Arrays.stream(key.split("/", -1)).noneMatch(part -> part.isEmpty() || part.equals(".") || part.equals("..")),
         422, "CATALOG_KEY_INVALID", "Object key catalog không hợp lệ.");
+
+    // Kiểm tra cache local trên đĩa trước để phản hồi siêu tốc (<1ms)
+    String cacheFileName = Idempotency.hash(key) + ".png";
+    Path cacheFile = cacheDir.resolve(cacheFileName);
+    if (Files.isRegularFile(cacheFile)) {
+      try {
+        return Files.readAllBytes(cacheFile);
+      } catch (IOException ignored) {}
+    }
+
     Problem.require(!catalogBase.isBlank(), 503, "CATALOG_STORAGE_NOT_CONFIGURED", "Cần cấu hình R2_PUBLIC_BASE_URL cho ảnh seed SQL.");
     var request = java.net.http.HttpRequest.newBuilder(java.net.URI.create(catalogBase + "/" + key))
+        .header("User-Agent", "Java-HttpClient/21")
         .timeout(java.time.Duration.ofSeconds(15)).GET().build();
     var pending = catalogHttp.sendAsync(request, info -> new BoundedImageBody(20 * 1024 * 1024));
     try {
       // Deadline gồm cả body, không chỉ khoảng chờ response headers.
       var response = pending.get(15, java.util.concurrent.TimeUnit.SECONDS);
-        Problem.require(response.statusCode() == 200, 503, "CATALOG_IMAGE_UNAVAILABLE", "Ảnh catalog chưa có trên object storage.");
-        byte[] data = response.body();
-        // Kiểm tra header trước decode, chỉ proxy ảnh thật và bỏ metadata khi xuất PNG.
-        try (var stream = ImageIO.createImageInputStream(new ByteArrayInputStream(data))) {
-          var readers = ImageIO.getImageReaders(stream);
-          Problem.require(readers.hasNext(), 415, "CATALOG_IMAGE_INVALID", "Object catalog không phải ảnh hợp lệ.");
-          var reader = readers.next();
-          try {
-            reader.setInput(stream, true, true);
-            String format = reader.getFormatName();
-            Problem.require((format.equalsIgnoreCase("png") || format.equalsIgnoreCase("jpeg"))
-                && (long) reader.getWidth(0) * reader.getHeight(0) <= 20000000,
-                415, "CATALOG_IMAGE_INVALID", "Ảnh catalog sai định dạng hoặc kích thước.");
+      Problem.require(response.statusCode() == 200, 503, "CATALOG_IMAGE_UNAVAILABLE", "Ảnh catalog chưa có trên object storage.");
+      byte[] data = response.body();
+      byte[] resultBytes;
+      // Kiểm tra header trước decode, chỉ proxy ảnh thật và bỏ metadata khi xuất PNG.
+      try (var stream = ImageIO.createImageInputStream(new ByteArrayInputStream(data))) {
+        var readers = ImageIO.getImageReaders(stream);
+        Problem.require(readers.hasNext(), 415, "CATALOG_IMAGE_INVALID", "Object catalog không phải ảnh hợp lệ.");
+        var reader = readers.next();
+        try {
+          reader.setInput(stream, true, true);
+          String format = reader.getFormatName();
+          Problem.require((format.equalsIgnoreCase("png") || format.equalsIgnoreCase("jpeg"))
+              && (long) reader.getWidth(0) * reader.getHeight(0) <= 60000000,
+              415, "CATALOG_IMAGE_INVALID", "Ảnh catalog sai định dạng hoặc kích thước.");
+          if (format.equalsIgnoreCase("png")) {
+            resultBytes = data;
+          } else {
             var out = new ByteArrayOutputStream();
             ImageIO.write(reader.read(0), "png", out);
             Problem.require(out.size() <= 20 * 1024 * 1024, 413, "CATALOG_IMAGE_TOO_LARGE", "PNG catalog sau chuẩn hóa vượt 20 MB.");
-            return out.toByteArray();
-          } finally { reader.dispose(); }
-        }
+            resultBytes = out.toByteArray();
+          }
+        } finally { reader.dispose(); }
+      }
+      try {
+        Files.write(cacheFile, resultBytes);
+      } catch (IOException ignored) {}
+      return resultBytes;
     } catch (InterruptedException e) {
       pending.cancel(true);
       Thread.currentThread().interrupt();
@@ -289,5 +313,19 @@ public class MediaService {
     } catch (IOException e) {
       throw new Problem(503, "STORAGE_UNAVAILABLE", "Chưa xóa được file ảnh.");
     }
+  }
+
+  public void saveToCache(String key, byte[] bytes) {
+    if (key == null || key.isBlank() || bytes == null) return;
+    try {
+      Files.write(cacheDir.resolve(Idempotency.hash(key) + ".png"), bytes);
+    } catch (IOException ignored) {}
+  }
+
+  public void evictCache(String key) {
+    if (key == null || key.isBlank()) return;
+    try {
+      Files.deleteIfExists(cacheDir.resolve(Idempotency.hash(key) + ".png"));
+    } catch (IOException ignored) {}
   }
 }

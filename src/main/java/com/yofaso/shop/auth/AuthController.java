@@ -1,13 +1,23 @@
 package com.yofaso.shop.auth;
 
+import com.yofaso.shop.ai.MediaService;
+import com.yofaso.shop.ai.R2Storage;
 import com.yofaso.shop.common.*;
 import com.yofaso.shop.location.LocationService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.time.LocalDate;
 import java.util.*;
+import javax.imageio.ImageIO;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 /** Đăng nhập, hồ sơ và sổ địa chỉ của chính người đang đăng nhập. */
 @RestController
@@ -18,10 +28,15 @@ public class AuthController {
       @NotBlank @Size(min = 10, max = 72) String password,
       @Size(max = 100) String fullName,
       @Pattern(regexp = "[0-9+]{9,15}") @NotNull String phone,
-      @NotBlank @Email @Size(max = 100) String email) {}
+      @NotBlank @Email @Size(max = 100) String email,
+      LocalDate dateOfBirth) {
+    public Register(String username, String password, String fullName, String phone, String email) {
+      this(username, password, fullName, phone, email, null);
+    }
+  }
 
   public record Login(
-      @NotBlank @Pattern(regexp = "[A-Za-z][A-Za-z0-9]{3,15}") String username, @NotBlank @Size(min = 10, max = 72) String password) {}
+      @NotBlank @Size(min = 3, max = 100) String username, @NotBlank @Size(min = 10, max = 72) String password) {}
 
   public record Token(@NotBlank @Size(max = 100) String refreshToken) {}
 
@@ -29,7 +44,8 @@ public class AuthController {
       @NotBlank @Size(max = 100) String fullName,
       @Email @Size(max = 100) String email,
       @Pattern(regexp = "[0-9+]{9,15}") String phone,
-      @Size(max=72) String currentPassword) {}
+      @Size(max=72) String currentPassword,
+      LocalDate dateOfBirth) {}
 
   public record Password(
       @NotBlank @Size(max = 72) String currentPassword,
@@ -48,12 +64,16 @@ public class AuthController {
   private final AuthService auth;
   private final Db db;
   private final LocationService locations;
+  private final MediaService media;
+  private final R2Storage r2;
 
   /** Nhận service tài khoản và kho dữ liệu địa chỉ. */
-  public AuthController(AuthService auth, Db db, LocationService locations) {
+  public AuthController(AuthService auth, Db db, LocationService locations, MediaService media, R2Storage r2) {
     this.auth = auth;
     this.db = db;
     this.locations = locations;
+    this.media = media;
+    this.r2 = r2;
   }
 
   /** Tạo tài khoản khách hàng, trả token để dùng ngay. */
@@ -96,13 +116,86 @@ public class AuthController {
     String previous=Db.text(db.one("SELECT Email FROM NguoiDung WHERE MaNguoiDung=?",a.getName()),"Email");
     if(email!=null && !email.equalsIgnoreCase(previous.trim())) auth.confirmPassword(a.getName(),b.currentPassword());
     db.exec(
-        "UPDATE NguoiDung SET HoVaTen=?,Email=COALESCE(?,Email),SoDienThoai=COALESCE(?,SoDienThoai) WHERE"
+        "UPDATE NguoiDung SET HoVaTen=?,Email=COALESCE(?,Email),SoDienThoai=COALESCE(?,SoDienThoai),NgaySinh=COALESCE(?,NgaySinh) WHERE"
             + " MaNguoiDung=?",
         b.fullName(),
         email,
         b.phone(),
+        b.dateOfBirth(),
         a.getName());
     return auth.me(a.getName());
+  }
+
+  /** Xem ảnh đại diện của người dùng theo ID (public cache 7 ngày). */
+  @GetMapping("/users/{id}/avatar")
+  public ResponseEntity<byte[]> userAvatar(@PathVariable String id) {
+    var user = db.one("SELECT AnhDaiDien FROM NguoiDung WHERE MaNguoiDung=?", id);
+    String key = Db.text(user, "AnhDaiDien");
+    Problem.require(!key.isEmpty(), 404, "NOT_FOUND", "Người dùng chưa có ảnh đại diện.");
+    return ResponseEntity.ok()
+        .contentType(MediaType.IMAGE_PNG)
+        .cacheControl(org.springframework.http.CacheControl.maxAge(7, java.util.concurrent.TimeUnit.DAYS).cachePublic())
+        .header("X-Content-Type-Options", "nosniff")
+        .body(media.catalogBytes(key));
+  }
+
+  /** Cập nhật ảnh đại diện của chính mình, upload lên Cloudflare R2 và xóa ảnh cũ trên R2. */
+  @PostMapping(value = "/me/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  @Transactional
+  public Map<String, Object> updateAvatar(Authentication a, @RequestParam("file") MultipartFile file)
+      throws IOException {
+    Problem.require(file != null && !file.isEmpty(), 400, "FILE_EMPTY", "File ảnh không được để trống.");
+    byte[] rawBytes = file.getBytes();
+    Problem.require(rawBytes.length <= 10 * 1024 * 1024, 413, "FILE_TOO_LARGE", "Kích thước ảnh tối đa 10 MB.");
+
+    byte[] pngBytes;
+    try (var stream = ImageIO.createImageInputStream(new ByteArrayInputStream(rawBytes))) {
+      var readers = ImageIO.getImageReaders(stream);
+      Problem.require(readers.hasNext(), 415, "IMAGE_INVALID", "Chỉ nhận ảnh PNG hoặc JPEG thực.");
+      var reader = readers.next();
+      try {
+        String format = reader.getFormatName();
+        Problem.require(
+            format.equalsIgnoreCase("png") || format.equalsIgnoreCase("jpeg"),
+            415,
+            "IMAGE_INVALID",
+            "Chỉ hỗ trợ PNG/JPEG.");
+        reader.setInput(stream, true, true);
+        int w = reader.getWidth(0), h = reader.getHeight(0);
+        Problem.require(
+            w >= 64 && h >= 64 && (long) w * h <= 25000000,
+            422,
+            "IMAGE_DIMENSIONS_INVALID",
+            "Cạnh ảnh tối thiểu 64px, tối đa 25 triệu pixel.");
+        var image = com.yofaso.shop.ai.ImageOrientation.apply(reader.read(0), com.yofaso.shop.ai.ImageOrientation.read(rawBytes));
+        var out = new ByteArrayOutputStream();
+        ImageIO.write(image, "png", out);
+        pngBytes = out.toByteArray();
+      } finally {
+        reader.dispose();
+      }
+    }
+
+    String userId = a.getName();
+    String uuid = UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+    String newKey = "avatars/" + userId + "/avatar-" + uuid + ".png";
+
+    // Upload lên Cloudflare R2 và lưu cache local
+    r2.upload(newKey, pngBytes);
+    media.saveToCache(newKey, pngBytes);
+
+    // Lấy avatar cũ để xóa sau khi lưu DB thành công
+    var oldUser = db.one("SELECT AnhDaiDien FROM NguoiDung WHERE MaNguoiDung=?", userId);
+    String oldKey = Db.text(oldUser, "AnhDaiDien");
+
+    db.exec("UPDATE NguoiDung SET AnhDaiDien=? WHERE MaNguoiDung=?", newKey, userId);
+
+    if (!oldKey.isEmpty() && !oldKey.equals(newKey)) {
+      r2.delete(oldKey);
+      media.evictCache(oldKey);
+    }
+
+    return auth.me(userId);
   }
 
   /** Đổi mật khẩu và kết thúc các phiên cũ. */

@@ -16,36 +16,47 @@ public class AuthService {
   private final Db db;
   private final PasswordEncoder passwords;
   private final JwtEncoder encoder;
+  private final String catalogBase;
 
   /** Nhận các thành phần mã hóa do Spring cung cấp. */
-  public AuthService(Db db, PasswordEncoder passwords, JwtEncoder encoder) {
+  public AuthService(Db db, PasswordEncoder passwords, JwtEncoder encoder,
+      @org.springframework.beans.factory.annotation.Value("${app.catalog.public-base-url:}") String catalogBase) {
     this.db = db;
     this.passwords = passwords;
     this.encoder = encoder;
+    this.catalogBase = catalogBase == null ? "" : catalogBase.replaceAll("/+$", "");
   }
 
   /** Đăng ký luôn là CUSTOMER; client không được tự truyền role. */
   @Transactional
   public Map<String, Object> register(AuthController.Register body) {
     validatePassword(body.password());
+    if (body.fullName() != null && !body.fullName().isBlank()) {
+      Problem.require(
+          body.fullName().trim().matches("^[\\p{L}\\s]+$"),
+          422,
+          "FULL_NAME_INVALID",
+          "Họ và tên không được chứa số hoặc ký tự đặc biệt.");
+    }
     String email=AccountEmail.reserve(db,body.email(),"");
     String id = Db.id("ND");
     db.exec(
-        "INSERT INTO NguoiDung(MaNguoiDung,TenDangNhap,MatKhau,HoVaTen,SoDienThoai,Email)"
-            + " VALUES(?,?,?,?,?,?)",
+        "INSERT INTO NguoiDung(MaNguoiDung,TenDangNhap,MatKhau,HoVaTen,SoDienThoai,Email,NgaySinh)"
+            + " VALUES(?,?,?,?,?,?,?)",
         id,
         body.username(),
         passwords.encode(body.password()),
-        body.fullName()==null || body.fullName().isBlank() ? body.username() : body.fullName(),
+        body.fullName()==null || body.fullName().isBlank() ? body.username() : body.fullName().trim(),
         body.phone(),
-        email);
+        email,
+        body.dateOfBirth());
     Problem.require(db.exec("INSERT INTO NguoiDung_VaiTro(MaNguoiDung,MaVaiTro)"
         + " SELECT ?,MaVaiTro FROM VaiTro WHERE TenVaiTro='ROLE_CUSTOMER'", id) == 1,
         503, "ROLE_CONFIG_INVALID", "Database chưa có vai trò khách hàng chuẩn.");
     return tokens(id);
   }
 
-  /** Xác thực mà không tiết lộ tên đăng nhập có tồn tại hay không. */
+  /** Xác thực mà không tiết lộ tên đăng nhập có tồn tại hay không; chấp nhận tên đăng nhập, email hoặc SĐT. */
   @Transactional
   public Map<String, Object> login(String username, String password) {
     Problem.require(
@@ -53,7 +64,10 @@ public class AuthService {
         401,
         "LOGIN_FAILED",
         "Tên đăng nhập hoặc mật khẩu không đúng.");
-    var users = db.rows("SELECT * FROM NguoiDung WHERE TenDangNhap=?", username);
+    String input = username.trim();
+    var users = db.rows(
+        "SELECT * FROM NguoiDung WHERE TenDangNhap=? OR LOWER(TRIM(Email))=? OR SoDienThoai=?",
+        input, input.toLowerCase(Locale.ROOT), input);
     // Hash giả đảm bảo nhánh tài khoản không tồn tại vẫn thực hiện BCrypt.
     String hash =
         users.isEmpty()
@@ -104,10 +118,20 @@ public class AuthService {
     var user =
         db.one(
             "SELECT MaNguoiDung AS userId,TenDangNhap AS username,HoVaTen AS fullName,SoDienThoai"
-                + " AS phone,Email AS email,DiemTichLuy AS loyaltyPoints,HangThanhVien AS"
-                + " membership FROM NguoiDung WHERE MaNguoiDung=?",
+                + " AS phone,Email AS email,NgaySinh AS dateOfBirth,DiemTichLuy AS loyaltyPoints,HangThanhVien AS"
+                + " membership,AnhDaiDien AS avatarKey FROM NguoiDung WHERE MaNguoiDung=?",
             id);
     user.put("roles", roles(id));
+    String avatarKey = Db.text(user, "avatarKey");
+    if (!avatarKey.isEmpty()) {
+      user.put("avatarUrl", "/api/v1/users/" + id + "/avatar?v=" + Idempotency.hash(avatarKey).substring(0, 8));
+      if (!catalogBase.isEmpty()) {
+        user.put("avatarDirectUrl", catalogBase + "/" + avatarKey);
+      }
+    } else {
+      user.put("avatarUrl", null);
+      user.put("avatarDirectUrl", null);
+    }
     return user;
   }
 

@@ -124,7 +124,11 @@ public class AiController {
         + " WHERE h.MaHinhAnh=? AND p.TrangThaiSanPham='DANG_KINH_DOANH'", id);
     String key = Db.text(row, kind.equals("cutout") ? "DuongDanAnhBocNen" : "DuongDanAnhGoc");
     Problem.require(!key.isEmpty(), 404, "NOT_FOUND", "Ảnh này chưa có dữ liệu.");
-    return png(media.catalogBytes(key));
+    return ResponseEntity.ok()
+        .contentType(MediaType.IMAGE_PNG)
+        .cacheControl(org.springframework.http.CacheControl.maxAge(7, java.util.concurrent.TimeUnit.DAYS).cachePublic())
+        .header("X-Content-Type-Options", "nosniff")
+        .body(media.catalogBytes(key));
   }
 
   /** Kiểm tra ảnh người thật qua AI; mode mock của AI vẫn được giữ nguyên cờ simulated. */

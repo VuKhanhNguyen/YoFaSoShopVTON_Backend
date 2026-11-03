@@ -132,11 +132,13 @@ public class AuthController {
     var user = db.one("SELECT AnhDaiDien FROM NguoiDung WHERE MaNguoiDung=?", id);
     String key = Db.text(user, "AnhDaiDien");
     Problem.require(!key.isEmpty(), 404, "NOT_FOUND", "Người dùng chưa có ảnh đại diện.");
+    byte[] bytes = media.catalogBytes(key);
     return ResponseEntity.ok()
         .contentType(MediaType.IMAGE_PNG)
+        .contentLength(bytes.length)
         .cacheControl(org.springframework.http.CacheControl.maxAge(7, java.util.concurrent.TimeUnit.DAYS).cachePublic())
         .header("X-Content-Type-Options", "nosniff")
-        .body(media.catalogBytes(key));
+        .body(bytes);
   }
 
   /** Cập nhật ảnh đại diện của chính mình, upload lên Cloudflare R2 và xóa ảnh cũ trên R2. */

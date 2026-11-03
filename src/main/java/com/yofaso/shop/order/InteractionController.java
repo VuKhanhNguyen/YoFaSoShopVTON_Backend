@@ -34,13 +34,28 @@ public class InteractionController {
       @PathVariable String id,
       @RequestParam(defaultValue = "0") int page,
       @RequestParam(defaultValue = "20") int size) {
-    return db.rows(
-        "SELECT MaDanhGia AS reviewId,SoSao AS stars,NoiDungBinhLuan AS comment,PhanHoiTuShop AS"
-            + " shopReply,NgayDanhGia AS createdAt FROM DanhGiaSanPham WHERE MaSanPham=? AND"
-            + " TrangThaiDuyet='DA_HIEN_THI' ORDER BY NgayDanhGia DESC LIMIT ? OFFSET ?",
+    var rows = db.rows(
+        "SELECT d.MaDanhGia AS reviewId, d.SoSao AS stars, d.NoiDungBinhLuan AS comment, d.PhanHoiTuShop AS shopReply, "
+            + "d.NgayDanhGia AS createdAt, d.HinhAnhThucTe AS photoUrl, u.HoVaTen AS userName, u.AnhDaiDien AS userAvatar, "
+            + "b.KichCo AS size, b.TenMau AS colorName, b.MaQuanLyHangHoa AS sku "
+            + "FROM DanhGiaSanPham d "
+            + "JOIN NguoiDung u ON u.MaNguoiDung = d.MaNguoiDung "
+            + "LEFT JOIN ChiTietDonHang c ON c.MaChiTietDonHang = d.MaChiTietDonHang "
+            + "LEFT JOIN BienTheSanPham b ON b.MaBienThe = c.MaBienThe "
+            + "WHERE d.MaSanPham = ? AND d.TrangThaiDuyet = 'DA_HIEN_THI' "
+            + "ORDER BY d.NgayDanhGia DESC LIMIT ? OFFSET ?",
         id,
         size,
         Db.offset(page, size));
+    for (var r : rows) {
+      if (r.get("userAvatar") != null) {
+        String av = r.get("userAvatar").toString();
+        if (!av.startsWith("http") && !av.startsWith("/")) {
+          r.put("userAvatar", "/api/v1/content?key=" + av);
+        }
+      }
+    }
+    return rows;
   }
 
   /** Mỗi dòng đơn đã giao chỉ được đánh giá một lần nhờ unique constraint. */

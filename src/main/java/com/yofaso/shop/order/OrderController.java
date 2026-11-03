@@ -31,16 +31,30 @@ public class OrderController {
     this.orders = orders;
   }
 
-  /** Giỏ cá nhân luôn dùng giá hiện tại, không cam kết giá đến khi checkout. */
+  /** Giỏ cá nhân luôn dùng giá hiện tại, kèm thông tin sản phẩm và ảnh đại diện để hiển thị chính xác. */
   @GetMapping("/cart")
   public List<Map<String, Object>> cart(Authentication a) {
-    return db.rows(
-        "SELECT c.MaBienThe AS variantId,c.SoLuong AS quantity,b.MaSanPham AS productId,b.TenMau AS"
-            + " colorName,b.KichCo AS size,COALESCE(b.GiaKhuyenMai,b.GiaNiemYet) AS"
-            + " unitPrice,b.SoLuongTonKho AS stock FROM ChiTietGioHang c JOIN GioHang g ON"
-            + " g.MaGioHang=c.MaGioHang JOIN BienTheSanPham b ON b.MaBienThe=c.MaBienThe WHERE"
-            + " g.MaNguoiDung=?",
-        a.getName());
+    var rows =
+        db.rows(
+            "SELECT c.MaChiTietGioHang AS id, c.MaBienThe AS variantId, c.SoLuong AS quantity, "
+                + "b.MaSanPham AS productId, p.TenSanPham AS productName, b.TenMau AS colorName, "
+                + "b.KichCo AS size, b.MaQuanLyHangHoa AS sku, "
+                + "COALESCE(b.GiaKhuyenMai, b.GiaNiemYet) AS unitPrice, b.GiaNiemYet AS originalPrice, "
+                + "b.SoLuongTonKho AS stock, "
+                + "(SELECT h.MaHinhAnh FROM HinhAnhSanPham h WHERE h.MaSanPham = b.MaSanPham AND h.LaAnhDaiDien = 1 LIMIT 1) AS imageId "
+                + "FROM ChiTietGioHang c "
+                + "JOIN GioHang g ON g.MaGioHang = c.MaGioHang "
+                + "JOIN BienTheSanPham b ON b.MaBienThe = c.MaBienThe "
+                + "JOIN SanPham p ON p.MaSanPham = b.MaSanPham "
+                + "WHERE g.MaNguoiDung = ? "
+                + "ORDER BY c.NgayThem DESC",
+            a.getName());
+    for (var r : rows) {
+      if (r.get("imageId") != null) {
+        r.put("coverUrl", "/api/v1/catalog/images/" + r.get("imageId") + "/content?kind=original");
+      }
+    }
+    return rows;
   }
 
   /** Đặt số lượng tuyệt đối để retry PUT không cộng thêm hàng. */

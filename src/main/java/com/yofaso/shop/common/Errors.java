@@ -31,9 +31,51 @@ public class Errors {
         status == 429 || status == 502 || status == 503 || status == 504);
   }
 
+  /** Kiểm tra ngoại lệ xem có phải do client chủ động ngắt kết nối / hủy tải request. */
+  public static boolean isClientAbort(Throwable t) {
+    while (t != null) {
+      String name = t.getClass().getName();
+      if ("org.apache.catalina.connector.ClientAbortException".equals(name)
+          || "org.springframework.web.context.request.async.AsyncRequestNotUsableException".equals(name)) {
+        return true;
+      }
+      String msg = t.getMessage();
+      if (msg != null) {
+        String lower = msg.toLowerCase(Locale.ROOT);
+        if (lower.contains("broken pipe")
+            || lower.contains("connection reset")
+            || lower.contains("connection was aborted")
+            || lower.contains("connection was closed")
+            || lower.contains("connection abort")) {
+          return true;
+        }
+      }
+      t = t.getCause();
+    }
+    return false;
+  }
+
+  /**
+   * Bỏ qua lỗi ngắt kết nối từ phía client (AsyncRequestNotUsableException, ClientAbortException, Broken pipe).
+   * Khi client hủy tải ảnh hoặc ngắt kết nối đột ngột: không log ERROR và không ghi response vào socket đã đóng.
+   */
+  @ExceptionHandler({
+      org.springframework.web.context.request.async.AsyncRequestNotUsableException.class,
+      org.apache.catalina.connector.ClientAbortException.class
+  })
+  public void handleClientAbort(Exception e, HttpServletRequest req) {
+    org.slf4j.LoggerFactory.getLogger(Errors.class)
+        .debug("client_aborted correlationId={}: {}", req.getAttribute("correlationId"), e.getMessage());
+  }
+
   /** Ánh xạ lỗi domain, validation, quyền, trùng dữ liệu và framework. */
   @ExceptionHandler(Exception.class)
   public ResponseEntity<ErrorBody> handle(Exception e, HttpServletRequest req) {
+    if (isClientAbort(e)) {
+      org.slf4j.LoggerFactory.getLogger(Errors.class)
+          .debug("client_aborted correlationId={}: {}", req.getAttribute("correlationId"), e.getMessage());
+      return null;
+    }
     int status = 500;
     String code = "INTERNAL_ERROR", message = "Có lỗi nội bộ; tra cứu theo correlationId.";
     Map<String, Object> details = Map.of();

@@ -78,8 +78,11 @@ public class CatalogController {
       @RequestParam(defaultValue = "20") int limit,
       @RequestParam(defaultValue = "") String material,
       @RequestParam(defaultValue = "") String fit,
-      @RequestParam(defaultValue = "") String pattern) {
-    return service.browse(q, categoryId, size, color, minPrice, maxPrice, page, limit,material,fit,pattern,"",false);
+      @RequestParam(defaultValue = "") String pattern,
+      @RequestParam(defaultValue = "") String vtonCategory,
+      @RequestParam(defaultValue = "") String gender,
+      @RequestParam(defaultValue = "newest") String sort) {
+    return service.browse(q, categoryId, size, color, minPrice, maxPrice, page, limit, material, fit, pattern, "", false, vtonCategory, gender, sort);
   }
 
   /** Chi tiết một sản phẩm đang kinh doanh cùng các SKU và ảnh. */

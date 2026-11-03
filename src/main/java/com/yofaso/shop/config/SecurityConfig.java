@@ -113,7 +113,15 @@ public class SecurityConfig {
                     .requestMatchers(
                         org.springframework.http.HttpMethod.GET,
                         "/api/v1/catalog/**",
-                        "/api/v1/promotions",
+                        "/api/v1/promotions")
+                    .permitAll()
+                    .requestMatchers(
+                        org.springframework.http.HttpMethod.HEAD,
+                        "/api/v1/catalog/**"
+                    )
+                    .permitAll()
+                    .requestMatchers(
+                        org.springframework.http.HttpMethod.GET,
                         "/api/v1/provinces", "/api/v1/provinces/**",
                         "/api/v1/districts/**", "/api/v1/wards/**",
                         "/api/v1/new-provinces", "/api/v1/new-provinces/**", "/api/v1/new-wards/**",

@@ -25,6 +25,7 @@ class CatalogAnalysisContractTest {
       when(db.runtime()).thenReturn(runtime);
       when(db.one(anyString(),any())).thenReturn(new HashMap<>());
       when(db.count(anyString(),any())).thenReturn(1L);
+      when(db.nextId(anyString())).thenReturn("PA00000001");
       var client=mock(AiClient.class);
       var r2=mock(R2Storage.class);
       when(r2.upload(anyString(),any())).thenAnswer(i -> i.getArgument(0));

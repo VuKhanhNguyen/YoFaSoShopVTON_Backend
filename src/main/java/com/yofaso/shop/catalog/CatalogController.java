@@ -91,6 +91,7 @@ public class CatalogController {
     return service.detail(id, false);
   }
 
+
   /** Danh sách nội bộ có bộ lọc trạng thái; giữ response list cho consumer hiện có. */
   @GetMapping({"/admin/products","/staff/products"})
   @PreAuthorize("hasAnyRole('SHOP_ADMIN','STAFF_CASHIER','STAFF_WAREHOUSE','STAFF_SHIPPER')")

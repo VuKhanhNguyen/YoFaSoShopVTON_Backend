@@ -368,6 +368,20 @@ CREATE TABLE ThongBao (
     CONSTRAINT FK_ThongBao_NguoiDung FOREIGN KEY (MaNguoiDung) REFERENCES NguoiDung(MaNguoiDung) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Bảng thông báo hệ thống đa kênh cho khách hàng và nhân sự';
 
+-- Bảng 20: NguoiDung_KhuyenMai (Ví Voucher & Lịch sử thu thập mã ưu đãi của khách hàng)
+CREATE TABLE NguoiDung_KhuyenMai (
+    MaNguoiDung VARCHAR(20) NOT NULL COMMENT 'Khóa ngoại tham chiếu NguoiDung',
+    MaKhuyenMai VARCHAR(20) NOT NULL COMMENT 'Khóa ngoại tham chiếu KhuyenMai',
+    NgayThuThap DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Thời điểm khách bấm Lưu voucher vào ví',
+    TrangThai ENUM('CHUA_DUNG', 'DA_DUNG', 'HET_HAN') NOT NULL DEFAULT 'CHUA_DUNG' COMMENT 'Trạng thái sở hữu của khách',
+    NgaySuDung DATETIME NULL COMMENT 'Thời điểm dùng mã vào đơn hàng',
+    MaDonHangDaDung VARCHAR(20) NULL COMMENT 'Mã đơn hàng đã sử dụng voucher này (nếu có)',
+    CONSTRAINT PK_NguoiDung_KhuyenMai PRIMARY KEY (MaNguoiDung, MaKhuyenMai),
+    CONSTRAINT FK_NDKM_NguoiDung FOREIGN KEY (MaNguoiDung) REFERENCES NguoiDung(MaNguoiDung) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT FK_NDKM_KhuyenMai FOREIGN KEY (MaKhuyenMai) REFERENCES KhuyenMai(MaKhuyenMai) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT FK_NDKM_DonHang FOREIGN KEY (MaDonHangDaDung) REFERENCES DonHang(MaDonHang) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Bảng ví voucher cá nhân của người dùng (My Voucher Wallet)';
+
 -- -------------------------------------------------------------------------------------
 -- TỐI ƯU HÓA CHỈ MỤC TÌM KIẾM (INDEX CHO HIỆU NĂNG TRUY VẤN CAO)
 -- -------------------------------------------------------------------------------------
@@ -389,6 +403,7 @@ CREATE INDEX IDX_BienDongKho_BienThe ON BienDongKho(MaBienThe);
 CREATE INDEX IDX_BienDongKho_NgayThucHien ON BienDongKho(NgayThucHien);
 CREATE INDEX IDX_CaLamViec_ThuNgan ON CaLamViecThuNgan(MaThuNgan);
 CREATE INDEX IDX_ThongBao_NguoiDung_DaDoc ON ThongBao(MaNguoiDung, DaDoc, NgayTao DESC);
+CREATE INDEX IDX_NguoiDung_KhuyenMai_TrangThai ON NguoiDung_KhuyenMai(MaNguoiDung, TrangThai);
 
 -- =====================================================================================
 

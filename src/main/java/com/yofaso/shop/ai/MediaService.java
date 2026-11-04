@@ -49,10 +49,10 @@ public class MediaService {
     boolean source = Set.of("person", "garment", "reference").contains(role);
     if (source) db.one("SELECT MaNguoiDung FROM NguoiDung WHERE MaNguoiDung=? FOR UPDATE", owner);
     Problem.require(
-        bytes.length > 0 && bytes.length <= (source ? 10 : 20) * 1024 * 1024,
+        bytes.length > 0 && bytes.length <= 50 * 1024 * 1024,
         413,
         "UPLOAD_TOO_LARGE",
-        "Ảnh rỗng hoặc vượt 10 MB.");
+        "Ảnh rỗng hoặc vượt 50 MB.");
     if (source)
       Problem.require(
           db.runtime().find("media", r -> owner.equals(r.get("OwnerId")) && Set.of("person","garment","reference").contains(r.get("RoleName"))).size()
@@ -74,10 +74,10 @@ public class MediaService {
         reader.setInput(stream, true, true);
         int w = reader.getWidth(0), h = reader.getHeight(0);
         Problem.require(
-            w >= (source ? 128 : 1) && h >= (source ? 128 : 1) && (long) w * h <= 20000000,
+            w >= (source ? 128 : 1) && h >= (source ? 128 : 1) && (long) w * h <= 60000000,
             422,
             "IMAGE_DIMENSIONS_INVALID",
-            "Cạnh ảnh tối thiểu 128px, tối đa 20 triệu pixel.");
+            "Cạnh ảnh tối thiểu 128px, tối đa 60 triệu pixel.");
         var image = ImageOrientation.apply(reader.read(0), ImageOrientation.read(bytes));
         w = image.getWidth();
         h = image.getHeight();
@@ -191,11 +191,11 @@ public class MediaService {
     Problem.require(!catalogBase.isBlank(), 503, "CATALOG_STORAGE_NOT_CONFIGURED", "Cần cấu hình R2_PUBLIC_BASE_URL cho ảnh seed SQL.");
     var request = java.net.http.HttpRequest.newBuilder(java.net.URI.create(catalogBase + "/" + key))
         .header("User-Agent", "Java-HttpClient/21")
-        .timeout(java.time.Duration.ofSeconds(15)).GET().build();
-    var pending = catalogHttp.sendAsync(request, info -> new BoundedImageBody(20 * 1024 * 1024));
+        .timeout(java.time.Duration.ofSeconds(45)).GET().build();
+    var pending = catalogHttp.sendAsync(request, info -> new BoundedImageBody(64 * 1024 * 1024));
     try {
       // Deadline gồm cả body, không chỉ khoảng chờ response headers.
-      var response = pending.get(15, java.util.concurrent.TimeUnit.SECONDS);
+      var response = pending.get(45, java.util.concurrent.TimeUnit.SECONDS);
       Problem.require(response.statusCode() == 200, 503, "CATALOG_IMAGE_UNAVAILABLE", "Ảnh catalog chưa có trên object storage.");
       byte[] data = response.body();
       byte[] resultBytes;
@@ -207,15 +207,43 @@ public class MediaService {
         try {
           reader.setInput(stream, true, true);
           String format = reader.getFormatName();
+          int w = reader.getWidth(0), h = reader.getHeight(0);
           Problem.require((format.equalsIgnoreCase("png") || format.equalsIgnoreCase("jpeg"))
-              && (long) reader.getWidth(0) * reader.getHeight(0) <= 60000000,
+              && (long) w * h <= 60000000,
               415, "CATALOG_IMAGE_INVALID", "Ảnh catalog sai định dạng hoặc kích thước.");
+          int maxDimension = 1600;
+          if (w > maxDimension || h > maxDimension) {
+            var rawImage = reader.read(0);
+            int targetW = w, targetH = h;
+            if (targetW > targetH) {
+              targetH = (int) Math.round((double) targetH * maxDimension / targetW);
+              targetW = maxDimension;
+            } else {
+              targetW = (int) Math.round((double) targetW * maxDimension / targetH);
+              targetH = maxDimension;
+            }
+            var scaled = new java.awt.image.BufferedImage(targetW, targetH,
+                rawImage.getColorModel().hasAlpha()
+                    ? java.awt.image.BufferedImage.TYPE_INT_ARGB
+                    : java.awt.image.BufferedImage.TYPE_INT_RGB);
+            var g = scaled.createGraphics();
+            try {
+              g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+              g.setRenderingHint(java.awt.RenderingHints.KEY_RENDERING, java.awt.RenderingHints.VALUE_RENDER_QUALITY);
+              g.drawImage(rawImage, 0, 0, targetW, targetH, null);
+            } finally {
+              g.dispose();
+            }
+            var out = new ByteArrayOutputStream();
+            ImageIO.write(scaled, "png", out);
+            resultBytes = out.toByteArray();
+          } else
           if (format.equalsIgnoreCase("png")) {
             resultBytes = data;
           } else {
             var out = new ByteArrayOutputStream();
             ImageIO.write(reader.read(0), "png", out);
-            Problem.require(out.size() <= 20 * 1024 * 1024, 413, "CATALOG_IMAGE_TOO_LARGE", "PNG catalog sau chuẩn hóa vượt 20 MB.");
+
             resultBytes = out.toByteArray();
           }
         } finally { reader.dispose(); }

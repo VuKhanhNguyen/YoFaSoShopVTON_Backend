@@ -232,6 +232,7 @@ public class CatalogService {
     return rows;
   }
 
+
   /** Tạo/sửa sản phẩm bằng các field đã kiểm tra, không mass assignment. */
   @Transactional
   public String save(String id, CatalogController.Product b, String actor) {

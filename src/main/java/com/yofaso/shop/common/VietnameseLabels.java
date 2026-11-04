@@ -31,7 +31,7 @@ public class VietnameseLabels implements ResponseBodyAdvice<Object> {
       {"CHUA_XEM","Chưa xem"},{"DA_THU_THEM","Đã thử thêm"},{"DA_THEM_GIO_HANG","Đã thêm giỏ hàng"},{"DA_MUA","Đã mua"},
       {"DANG_MO","Đang mở ca"},{"DA_DONG_CHO_DUYET","Đã đóng ca, chờ duyệt"},{"DA_DUYET","Đã duyệt"},
       {"CHO_DUYET","Chờ duyệt"},{"DA_HIEN_THI","Đã hiển thị"},{"DA_AN_VI_PHAM","Đã ẩn do vi phạm"},
-      {"DONG","Đồng"},{"BAC","Bạc"},{"VANG","Vàng"},{"KIM_CUONG","Kim cương"},
+      {"DONG","Đồng"},{"BAC","Bạc"},{"VANG","Vàng"},{"KIM_CUONG","Kim cương"},{"VIP","VIP"},
       {"RECOMMENDED","Nên phối"},{"ACCEPTABLE","Phù hợp"},{"NEEDS_ADJUSTMENT","Cần điều chỉnh"},{"NOT_RECOMMENDED","Không nên phối"}
     };
     for(var pair:pairs) labels.put(pair[0],pair[1]);

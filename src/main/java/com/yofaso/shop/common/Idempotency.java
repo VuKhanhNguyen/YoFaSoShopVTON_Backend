@@ -49,28 +49,26 @@ public class Idempotency {
           "IDEMPOTENCY_CONFLICT",
           "Key đã dùng với nội dung khác.");
       String id = Db.text(r, "ResourceId");
+      if (id.isEmpty()) return null;
       if (scope.equals("ORDER") || scope.equals("POS_ORDER")) {
-        if(id.isEmpty()) id=resourceId(owner,scope,key,"DH");
         return db.count("SELECT COUNT(*) FROM DonHang WHERE MaDonHang=?", id) > 0 ? id : null;
       }
-      if(scope.equals("INVENTORY_ADJUST")) {
-        if(id.isEmpty()) id=resourceId(owner,scope,key,"BDK");
-        return db.count("SELECT COUNT(*) FROM BienDongKho WHERE MaBienDong=?",id)>0 ? id : null;
+      if (scope.equals("INVENTORY_ADJUST")) {
+        return db.count("SELECT COUNT(*) FROM BienDongKho WHERE MaBienDong=?", id) > 0 ? id : null;
       }
-      if (id.isEmpty()) return null;
-      if(scope.equals("TRY_ON") && db.count("SELECT COUNT(*) FROM PhienThuDoAo WHERE MaPhienThuDo=?",id)==0) return null;
-      final String resource=id;
-      if(Set.of("TRY_ON","ANALYSIS").contains(scope) && db.runtime().find("operations",op -> resource.equals(op.get("OperationId"))).isEmpty()) return null;
+      if (scope.equals("TRY_ON") && db.count("SELECT COUNT(*) FROM PhienThuDoAo WHERE MaPhienThuDo=?", id) == 0) return null;
+      final String resource = id;
+      if (Set.of("TRY_ON", "ANALYSIS").contains(scope) && db.runtime().find("operations", op -> resource.equals(op.get("OperationId"))).isEmpty()) return null;
       return id;
     }
     db.runtime().put("idempotency", identity, java.util.Map.of("identity", identity, "Fingerprint", fingerprint));
-    if(org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive())
+    if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive())
       org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
-        new org.springframework.transaction.support.TransactionSynchronization() {
-          @Override public void afterCompletion(int status) {
-            if(status==STATUS_ROLLED_BACK) db.runtime().remove("idempotency",identity);
-          }
-        });
+          new org.springframework.transaction.support.TransactionSynchronization() {
+            @Override public void afterCompletion(int status) {
+              if (status == STATUS_ROLLED_BACK) db.runtime().remove("idempotency", identity);
+            }
+          });
     return null;
   }
 
@@ -78,7 +76,22 @@ public class Idempotency {
   public void complete(String owner, String scope, String key, String id) {
     db.runtime().patch("idempotency", hash(owner + ":" + scope + ":" + key), "ResourceId", id);
   }
+
+  /**
+   * Cấp ID tuần tự ổn định cho idempotency key.
+   * Nếu key này đã sinh ID trong lần gọi trước, trả lại chính ID đó để tránh bỏ phí số thứ tự.
+   */
   public String resourceId(String owner, String scope, String key, String prefix) {
-    return prefix + hash(owner + ":" + scope + ":" + key).substring(0, 20-prefix.length());
+    String identity = hash(owner + ":" + scope + ":" + key);
+    var rows = db.runtime().find("idempotency", r -> identity.equals(r.get("identity")));
+    if (!rows.isEmpty()) {
+      String resId = Db.text(rows.getFirst(), "ResourceId");
+      if (!resId.isEmpty()) {
+        return resId;
+      }
+    }
+    String next = db.nextId(prefix);
+    db.runtime().patch("idempotency", identity, "ResourceId", next);
+    return next;
   }
 }

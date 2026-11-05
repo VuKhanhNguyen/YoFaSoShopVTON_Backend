@@ -219,5 +219,13 @@
     "LienKetDieuHuong",
     "DaDoc",
     "NgayTao"
+  ],
+  "NguoiDung_KhuyenMai": [
+    "MaNguoiDung",
+    "MaKhuyenMai",
+    "NgayThuThap",
+    "TrangThai",
+    "NgaySuDung",
+    "MaDonHangDaDung"
   ]
 }

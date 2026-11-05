@@ -722,7 +722,7 @@ class BackendIntegrationTest {
   @Test
   @Order(11)
   void contract() throws Exception {
-    assertEquals(19,db.count("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_TYPE='BASE TABLE'"));
+    assertEquals(20,db.count("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_TYPE='BASE TABLE'"));
     assertEquals(0,db.count("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND COLUMN_NAME IN ('AuthVersion','Simulated','AiMetadata','MaskAssetId')"));
     var contract = call("GET", "/contract", null, null, 200);
     assertEquals("3.1.0", contract.get("openapi"));

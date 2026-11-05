@@ -13,14 +13,18 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/v1")
 public class OrderController {
+  @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
   public record Item(@NotBlank @Size(max = 20) String variantId, @Min(1) @Max(99) int quantity) {}
 
+  @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
   public record Checkout(
       @Size(max = 20) String addressId,
       @NotEmpty @Size(max = 50) List<@Valid Item> items,
       @Size(max = 50) String voucher,
       @Size(max = 20) String customerId,
-      @DecimalMin("0") BigDecimal cashReceived) {}
+      @DecimalMin("0") BigDecimal cashReceived,
+      @Pattern(regexp = "^(COD_TIEN_MAT_KHI_NHAN|VIETQR_CHUYEN_KHOAN_ONLINE|COD|VIETQR)$")
+          String paymentMethod) {}
 
   private final Db db;
   private final OrderService orders;
@@ -114,18 +118,13 @@ public class OrderController {
     return orders.create(a.getName(), key, b, false);
   }
 
-  /** Lịch sử đơn riêng, không nhận userId để xem người khác. */
+  /** Lịch sử đơn riêng, không nhận userId để xem người khác; trả kèm preview sản phẩm. */
   @GetMapping("/orders")
   public List<Map<String, Object>> list(
       Authentication a,
       @RequestParam(defaultValue = "0") int page,
       @RequestParam(defaultValue = "20") int size) {
-    return db.rows(
-        OrderService.SUMMARY
-            + " WHERE MaNguoiDung=? ORDER BY NgayTao DESC,MaDonHang LIMIT ? OFFSET ?",
-        a.getName(),
-        size,
-        Db.offset(page, size));
+    return orders.listForUser(a.getName(), page, size);
   }
 
   /** Chi tiết đơn được kiểm tra ownership. */
@@ -133,6 +132,17 @@ public class OrderController {
   public Map<String, Object> detail(Authentication a, @PathVariable String id) {
     orders.own(id, a.getName());
     return orders.detail(id);
+  }
+
+  /** Khách xác nhận đã chuyển khoản VietQR thành công hoặc webhook gọi vào. */
+  @PostMapping("/orders/{id}/confirm-payment")
+  public Map<String, Object> confirmPayment(
+      Authentication a,
+      @PathVariable String id,
+      @RequestBody(required = false) Map<String, String> body) {
+    orders.own(id, a.getName());
+    String ref = body != null ? body.get("transactionRef") : null;
+    return orders.markPaidOnline(id, ref != null ? ref : "VQR-" + System.currentTimeMillis());
   }
 
   /** Khách chỉ hủy trước khi đóng gói, hoàn tồn nguyên tử. */

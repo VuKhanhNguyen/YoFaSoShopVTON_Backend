@@ -1,10 +1,21 @@
 package com.yofaso.shop.order;
 
-import com.yofaso.shop.common.*;
-import java.math.*;
-import java.util.*;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import com.yofaso.shop.common.Db;
+import com.yofaso.shop.common.Idempotency;
+import com.yofaso.shop.common.Problem;
 
 /** Đặt hàng, snapshot giá, voucher và chuyển trạng thái có khóa chống bán lố. */
 @Service
@@ -27,27 +38,67 @@ public class OrderService {
     this.keys = keys;
   }
 
-  /** Trả đơn cùng tổng giá tính từ snapshot dòng hàng. */
+  /** Trả đơn cùng tổng giá tính từ snapshot dòng hàng và ảnh đại diện. */
   public Map<String, Object> detail(String id) {
     var row = db.one(SUMMARY + " WHERE MaDonHang=?", id);
     var lines =
         db.rows(
-            "SELECT MaChiTietDonHang AS orderLineId,MaBienThe AS variantId,TenSanPhamLucDatHang AS"
-                + " productName,TenMauLucDatHang AS colorName,KichCoLucDatHang AS size,SoLuong AS"
-                + " quantity,DonGiaLucDatHang AS unitPrice,MaPhienThuDo AS sessionId FROM"
-                + " ChiTietDonHang WHERE MaDonHang=?",
+            "SELECT c.MaChiTietDonHang AS orderLineId,c.MaBienThe AS variantId,c.TenSanPhamLucDatHang AS"
+                + " productName,c.TenMauLucDatHang AS colorName,c.KichCoLucDatHang AS size,c.SoLuong AS"
+                + " quantity,c.DonGiaLucDatHang AS unitPrice,c.MaPhienThuDo AS sessionId,"
+                + "(SELECT h.MaHinhAnh FROM HinhAnhSanPham h JOIN BienTheSanPham b ON b.MaSanPham = h.MaSanPham WHERE b.MaBienThe = c.MaBienThe AND h.LaAnhDaiDien = 1 LIMIT 1) AS imageId FROM"
+                + " ChiTietDonHang c WHERE c.MaDonHang=?",
             id);
-    BigDecimal subtotal =
-        lines.stream()
-            .map(
-                l ->
-                    Db.money(l, "unitPrice").multiply(new BigDecimal(l.get("quantity").toString())))
-            .reduce(BigDecimal.ZERO, BigDecimal::add);
+    BigDecimal subtotal = BigDecimal.ZERO;
+    for (var l : lines) {
+      if (l.get("imageId") != null) {
+        l.put("coverUrl", "/api/v1/catalog/images/" + l.get("imageId") + "/content?kind=original");
+      }
+      BigDecimal p = Db.money(l, "unitPrice");
+      int q = ((Number) l.get("quantity")).intValue();
+      subtotal = subtotal.add(p.multiply(BigDecimal.valueOf(q)));
+    }
     row.put("items", lines);
     row.put("subtotal", subtotal);
     row.put(
         "total", subtotal.subtract(Db.money(row, "discount")).add(Db.money(row, "shippingFee")));
     return row;
+  }
+
+  /** Lịch sử đơn của khách kèm snapshot dòng hàng, ảnh sản phẩm và tổng tiền tính từ DB. */
+  public List<Map<String, Object>> listForUser(String userId, int page, int size) {
+    var rows =
+        db.rows(
+            SUMMARY
+                + " WHERE MaNguoiDung=? ORDER BY NgayTao DESC,MaDonHang LIMIT ? OFFSET ?",
+            userId,
+            size,
+            Db.offset(page, size));
+    for (var r : rows) {
+      String id = Db.text(r, "orderId");
+      var lines =
+          db.rows(
+              "SELECT c.MaChiTietDonHang AS orderLineId,c.MaBienThe AS variantId,c.TenSanPhamLucDatHang AS"
+                  + " productName,c.TenMauLucDatHang AS colorName,c.KichCoLucDatHang AS size,c.SoLuong AS"
+                  + " quantity,c.DonGiaLucDatHang AS unitPrice,c.MaPhienThuDo AS sessionId,"
+                  + "(SELECT h.MaHinhAnh FROM HinhAnhSanPham h JOIN BienTheSanPham b ON b.MaSanPham = h.MaSanPham WHERE b.MaBienThe = c.MaBienThe AND h.LaAnhDaiDien = 1 LIMIT 1) AS imageId FROM"
+                  + " ChiTietDonHang c WHERE c.MaDonHang=?",
+              id);
+      BigDecimal subtotal = BigDecimal.ZERO;
+      for (var l : lines) {
+        if (l.get("imageId") != null) {
+          l.put("coverUrl", "/api/v1/catalog/images/" + l.get("imageId") + "/content?kind=original");
+        }
+        BigDecimal p = Db.money(l, "unitPrice");
+        int q = ((Number) l.get("quantity")).intValue();
+        subtotal = subtotal.add(p.multiply(BigDecimal.valueOf(q)));
+      }
+      r.put("items", lines);
+      r.put("subtotal", subtotal);
+      r.put(
+          "total", subtotal.subtract(Db.money(r, "discount")).add(Db.money(r, "shippingFee")));
+    }
+    return rows;
   }
 
   /** Kiểm tra ownership hoặc vai trò staff ở caller, tránh IDOR. */
@@ -110,7 +161,16 @@ public class OrderService {
     Map<String, Object> promo = discount(b.voucher(), subtotal, true);
     BigDecimal discount = (BigDecimal) promo.get("discount");
     BigDecimal total = subtotal.subtract(discount);
-    String id = keys.resourceId(actor, scope, key, "DH"), method = pos ? "TIEN_MAT_TAI_QUAY" : "COD_TIEN_MAT_KHI_NHAN";
+    String id = keys.resourceId(actor, scope, key, "DH");
+    String method = pos ? "TIEN_MAT_TAI_QUAY" : "COD_TIEN_MAT_KHI_NHAN";
+    boolean isVietQr = false;
+    if (!pos && b.paymentMethod() != null) {
+      if ("VIETQR".equalsIgnoreCase(b.paymentMethod())
+          || "VIETQR_CHUYEN_KHOAN_ONLINE".equalsIgnoreCase(b.paymentMethod())) {
+        method = "VIETQR_CHUYEN_KHOAN_ONLINE";
+        isVietQr = true;
+      }
+    }
     if (pos)
       Problem.require(
           b.cashReceived() != null && b.cashReceived().compareTo(total) >= 0,
@@ -152,7 +212,7 @@ public class OrderService {
         method,
         pos ? "DA_THANH_TOAN" : "CHUA_THANH_TOAN",
         pos ? "HOAN_TAT" : "CHO_XAC_NHAN",
-        pos ? BigDecimal.ZERO : total,
+        (pos || isVietQr) ? BigDecimal.ZERO : total,
         promo.get("promotionId"));
     if (pos)
       db.exec("UPDATE DonHang SET ThoiGianThanhToan=CURRENT_TIMESTAMP WHERE MaDonHang=?", id);
@@ -330,6 +390,33 @@ public class OrderService {
     db.audit(actor, "ORDER_" + action.toUpperCase(Locale.ROOT), id);
     if (o.get("MaNguoiDung") != null)
       notice(Db.text(o, "MaNguoiDung"), id, "Đơn đã cập nhật trạng thái.");
+    return detail(id);
+  }
+
+  /**  khoản VietQR thành công, cập nhật trạng thái thanh toán và mã giao dịch. */
+  @Transactional
+  public Map<String, Object> markPaidOnline(String id, String transactionRef) {
+    var o = db.one("SELECT * FROM DonHang WHERE MaDonHang=? FOR UPDATE", id);
+    Problem.require(
+        "VIETQR_CHUYEN_KHOAN_ONLINE".equals(o.get("PhuongThucThanhToan"))
+            || "VIETQR_TAI_QUAY".equals(o.get("PhuongThucThanhToan")),
+        400,
+        "PAYMENT_METHOD_INVALID",
+        "Đơn hàng này không dùng phương thức VietQR.");
+    Problem.require(
+        "CHUA_THANH_TOAN".equals(o.get("TrangThaiThanhToan")),
+        409,
+        "ALREADY_PAID",
+        "Đơn hàng đã được ghi nhận thanh toán trước đó.");
+    db.exec(
+        "UPDATE DonHang SET TrangThaiThanhToan='DA_THANH_TOAN', ThoiGianThanhToan=CURRENT_TIMESTAMP,"
+            + " MaGiaoDichNgoai=? WHERE MaDonHang=?",
+        transactionRef,
+        id);
+    db.audit("SYSTEM", "ORDER_PAID_VIETQR", id);
+    if (o.get("MaNguoiDung") != null) {
+      notice(Db.text(o, "MaNguoiDung"), id, "Đã ghi nhận thanh toán VietQR thành công.");
+    }
     return detail(id);
   }
 

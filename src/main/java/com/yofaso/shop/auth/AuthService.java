@@ -40,19 +40,24 @@ public class AuthService {
     }
     String email=AccountEmail.reserve(db,body.email(),"");
     String id = Db.id("ND");
+    String gender = (body.gender() != null && Set.of("NAM", "NU", "KHAC").contains(body.gender().toUpperCase(Locale.ROOT)))
+        ? body.gender().toUpperCase(Locale.ROOT) : "NU";
     db.exec(
-        "INSERT INTO NguoiDung(MaNguoiDung,TenDangNhap,MatKhau,HoVaTen,SoDienThoai,Email,NgaySinh)"
-            + " VALUES(?,?,?,?,?,?,?)",
+        "INSERT INTO NguoiDung(MaNguoiDung,TenDangNhap,MatKhau,HoVaTen,SoDienThoai,Email,NgaySinh,GioiTinh)"
+            + " VALUES(?,?,?,?,?,?,?,?)",
         id,
         body.username(),
         passwords.encode(body.password()),
         body.fullName()==null || body.fullName().isBlank() ? body.username() : body.fullName().trim(),
         body.phone(),
         email,
-        body.dateOfBirth());
+        body.dateOfBirth(),
+        gender);
     Problem.require(db.exec("INSERT INTO NguoiDung_VaiTro(MaNguoiDung,MaVaiTro)"
         + " SELECT ?,MaVaiTro FROM VaiTro WHERE TenVaiTro='ROLE_CUSTOMER'", id) == 1,
         503, "ROLE_CONFIG_INVALID", "Database chưa có vai trò khách hàng chuẩn.");
+    grantWelcomeVouchers(id);
+    checkAndGrantBirthdayVoucher(id);
     return tokens(id);
   }
 
@@ -115,10 +120,11 @@ public class AuthService {
 
   /** Chỉ trả hồ sơ an toàn, không có password hash hay AuthVersion. */
   public Map<String, Object> me(String id) {
+    checkAndGrantBirthdayVoucher(id);
     var user =
         db.one(
             "SELECT MaNguoiDung AS userId,TenDangNhap AS username,HoVaTen AS fullName,SoDienThoai"
-                + " AS phone,Email AS email,NgaySinh AS dateOfBirth,DiemTichLuy AS loyaltyPoints,HangThanhVien AS"
+                + " AS phone,Email AS email,NgaySinh AS dateOfBirth,GioiTinh AS gender,DiemTichLuy AS loyaltyPoints,HangThanhVien AS"
                 + " membership,AnhDaiDien AS avatarKey FROM NguoiDung WHERE MaNguoiDung=?",
             id);
     user.put("roles", roles(id));
@@ -214,6 +220,46 @@ public class AuthService {
         900,
         "user",
         me(id));
+  }
+
+  /** Tự động tặng 2 voucher chào mừng (VTON5, FREESHIP) cho tài khoản mới đăng ký. */
+  public void grantWelcomeVouchers(String userId) {
+    try {
+      db.exec(
+          "INSERT IGNORE INTO NguoiDung_KhuyenMai (MaNguoiDung, MaKhuyenMai, NgayThuThap, TrangThai) "
+              + "SELECT ?, MaKhuyenMai, CURRENT_TIMESTAMP, 'CHUA_DUNG' FROM KhuyenMai "
+              + "WHERE MaPhieuGiamGia IN ('VTON5', 'FREESHIP') AND TrangThai='DANG_DIEN_RA'",
+          userId);
+    } catch (Exception ignored) {
+      // Không chặn luồng đăng ký nếu bảng khuyến mãi chưa sẵn sàng
+    }
+  }
+
+  /** Tự động kiểm tra và tặng voucher BIRTHDAY15 nếu hôm nay là sinh nhật của user và trong năm chưa nhận. */
+  public void checkAndGrantBirthdayVoucher(String userId) {
+    try {
+      db.exec(
+          "INSERT INTO NguoiDung_KhuyenMai (MaNguoiDung, MaKhuyenMai, NgayThuThap, TrangThai) "
+              + "SELECT u.MaNguoiDung, km.MaKhuyenMai, CURRENT_TIMESTAMP, 'CHUA_DUNG' "
+              + "FROM NguoiDung u "
+              + "CROSS JOIN KhuyenMai km "
+              + "WHERE u.MaNguoiDung = ? "
+              + "  AND km.MaPhieuGiamGia = 'BIRTHDAY15' "
+              + "  AND km.TrangThai = 'DANG_DIEN_RA' "
+              + "  AND u.NgaySinh IS NOT NULL "
+              + "  AND MONTH(u.NgaySinh) = MONTH(CURRENT_DATE) "
+              + "  AND DAY(u.NgaySinh) = DAY(CURRENT_DATE) "
+              + "  AND u.TrangThaiHoatDong = 'HOAT_DONG' "
+              + "  AND NOT EXISTS ("
+              + "      SELECT 1 FROM NguoiDung_KhuyenMai ndkm "
+              + "      WHERE ndkm.MaNguoiDung = u.MaNguoiDung "
+              + "        AND ndkm.MaKhuyenMai = km.MaKhuyenMai "
+              + "        AND YEAR(ndkm.NgayThuThap) = YEAR(CURRENT_DATE)"
+              + "  )",
+          userId);
+    } catch (Exception ignored) {
+      // Không chặn luồng thông tin cá nhân
+    }
   }
 
   /** BCrypt giới hạn 72 byte, yêu cầu có chữ và số thay vì chỉ kiểm tra số ký tự. */

@@ -29,7 +29,9 @@ public class StaffLookupController {
       @jakarta.validation.Valid @RequestBody com.yofaso.shop.auth.AuthController.Profile b,Authentication a) {
     String email=com.yofaso.shop.auth.AccountEmail.reserve(db,b.email(),id);
     db.one("SELECT MaNguoiDung FROM NguoiDung WHERE MaNguoiDung=? FOR UPDATE",id);
-    db.exec("UPDATE NguoiDung SET HoVaTen=?,Email=COALESCE(?,Email),SoDienThoai=COALESCE(?,SoDienThoai) WHERE MaNguoiDung=?",b.fullName(),email,b.phone(),id);
+    String gender = (b.gender() != null && Set.of("NAM", "NU", "KHAC").contains(b.gender().toUpperCase(java.util.Locale.ROOT)))
+        ? b.gender().toUpperCase(java.util.Locale.ROOT) : null;
+    db.exec("UPDATE NguoiDung SET HoVaTen=?,Email=COALESCE(?,Email),SoDienThoai=COALESCE(?,SoDienThoai),GioiTinh=COALESCE(?,GioiTinh) WHERE MaNguoiDung=?",b.fullName(),email,b.phone(),gender,id);
     db.runtime().bump(id);
     db.audit(a.getName(),"USER_PROFILE",id);
     return user(id);

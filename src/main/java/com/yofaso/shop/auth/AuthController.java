@@ -29,9 +29,13 @@ public class AuthController {
       @Size(max = 100) String fullName,
       @Pattern(regexp = "[0-9+]{9,15}") @NotNull String phone,
       @NotBlank @Email @Size(max = 100) String email,
-      LocalDate dateOfBirth) {
+      LocalDate dateOfBirth,
+      String gender) {
     public Register(String username, String password, String fullName, String phone, String email) {
-      this(username, password, fullName, phone, email, null);
+      this(username, password, fullName, phone, email, null, "NU");
+    }
+    public Register(String username, String password, String fullName, String phone, String email, LocalDate dateOfBirth) {
+      this(username, password, fullName, phone, email, dateOfBirth, "NU");
     }
   }
 
@@ -45,7 +49,8 @@ public class AuthController {
       @Email @Size(max = 100) String email,
       @Pattern(regexp = "[0-9+]{9,15}") String phone,
       @Size(max=72) String currentPassword,
-      LocalDate dateOfBirth) {}
+      LocalDate dateOfBirth,
+      String gender) {}
 
   public record Password(
       @NotBlank @Size(max = 72) String currentPassword,
@@ -115,13 +120,16 @@ public class AuthController {
     String email=AccountEmail.reserve(db,b.email(),a.getName());
     String previous=Db.text(db.one("SELECT Email FROM NguoiDung WHERE MaNguoiDung=?",a.getName()),"Email");
     if(email!=null && !email.equalsIgnoreCase(previous.trim())) auth.confirmPassword(a.getName(),b.currentPassword());
+    String gender = (b.gender() != null && Set.of("NAM", "NU", "KHAC").contains(b.gender().toUpperCase(Locale.ROOT)))
+        ? b.gender().toUpperCase(Locale.ROOT) : null;
     db.exec(
-        "UPDATE NguoiDung SET HoVaTen=?,Email=COALESCE(?,Email),SoDienThoai=COALESCE(?,SoDienThoai),NgaySinh=COALESCE(?,NgaySinh) WHERE"
+        "UPDATE NguoiDung SET HoVaTen=?,Email=COALESCE(?,Email),SoDienThoai=COALESCE(?,SoDienThoai),NgaySinh=COALESCE(?,NgaySinh),GioiTinh=COALESCE(?,GioiTinh) WHERE"
             + " MaNguoiDung=?",
         b.fullName(),
         email,
         b.phone(),
         b.dateOfBirth(),
+        gender,
         a.getName());
     return auth.me(a.getName());
   }

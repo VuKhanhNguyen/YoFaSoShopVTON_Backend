@@ -24,6 +24,22 @@ public class SchemaGuard implements ApplicationRunner {
       actual.computeIfAbsent(Db.text(row,"TABLE_NAME"),k -> new TreeSet<>()).add(Db.text(row,"COLUMN_NAME"));
     boolean matches=actual.size()==expected.size() && expected.entrySet().stream()
       .allMatch(e -> actual.containsKey(e.getKey()) && actual.get(e.getKey()).equals(new TreeSet<>(e.getValue())));
-    if(!matches) throw new IllegalStateException("Schema phải đúng 19 bảng/cột SQL gốc. Không tự migration/drop dữ liệu; xem migrationAndLocationGuide.md.");
+    if(!matches) {
+      var diff = new StringBuilder();
+      for (var entry : expected.entrySet()) {
+        if (!actual.containsKey(entry.getKey())) {
+          diff.append(" [Thiếu bảng: ").append(entry.getKey()).append("]");
+        } else if (!actual.get(entry.getKey()).equals(new TreeSet<>(entry.getValue()))) {
+          diff.append(" [Lệch cột bảng ").append(entry.getKey()).append(": expected=")
+              .append(new TreeSet<>(entry.getValue())).append(", actual=").append(actual.get(entry.getKey())).append("]");
+        }
+      }
+      for (var actKey : actual.keySet()) {
+        if (!expected.containsKey(actKey)) {
+          diff.append(" [Thừa bảng: ").append(actKey).append("]");
+        }
+      }
+      throw new IllegalStateException("Schema phải đúng " + expected.size() + " bảng/cột SQL gốc (hiện tại actual=" + actual.size() + " bảng). Chi tiết:" + diff + ". Không tự migration/drop dữ liệu; xem migrationAndLocationGuide.md.");
+    }
   }
 }

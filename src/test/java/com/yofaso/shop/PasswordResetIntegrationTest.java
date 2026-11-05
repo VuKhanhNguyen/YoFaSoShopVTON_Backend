@@ -68,7 +68,7 @@ class PasswordResetIntegrationTest {
     call("GET","/me",access,null,401);
     call("POST","/auth/refresh",null,Map.of("refreshToken",refresh),401);
     call("POST","/auth/login",null,Map.of("username",username,"password","AfterReset123"),200);
-    assertEquals(19,db.count("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_TYPE='BASE TABLE'"));
+    assertEquals(20,db.count("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_TYPE='BASE TABLE'"));
   }
   @Test @SuppressWarnings("unchecked") void registrationNeedsOnlyTheFourRequestedFields() throws Exception {
     String name="four"+UUID.randomUUID().toString().replace("-","").substring(0,12);

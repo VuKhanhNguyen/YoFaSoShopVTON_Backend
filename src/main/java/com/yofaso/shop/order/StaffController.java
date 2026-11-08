@@ -654,6 +654,49 @@ public class StaffController {
         Db.offset(page, size));
   }
 
+  /** Nhật ký kiểm toán hành vi trọng yếu toàn hệ thống từ các bảng CSDL MySQL (BienDongKho, CaLamViecThuNgan, DonHang). */
+  @GetMapping("/admin/audit-logs")
+  @PreAuthorize("hasRole('SHOP_ADMIN')")
+  public List<Map<String, Object>> adminAuditLogs(
+      @RequestParam(defaultValue = "0") int page,
+      @RequestParam(defaultValue = "100") int size) {
+    return db.rows(
+        "SELECT log.id, log.time, log.actor, log.action, log.reason "
+            + "FROM ("
+            + "  SELECT b.MaBienDong AS id, "
+            + "         DATE_FORMAT(b.NgayThucHien, '%d/%m/%Y %H:%i') AS time, "
+            + "         CONCAT(COALESCE(u.HoVaTen, u.TenDangNhap, 'Thủ kho'), ' · ', COALESCE(b.MaNhanVienThucHien, 'Hệ thống')) AS actor, "
+            + "         CONCAT('Biến động kho [', b.LoaiBienDong, ']: ', (CASE WHEN b.SoLuongThayDoi > 0 THEN CONCAT('+', b.SoLuongThayDoi) ELSE CAST(b.SoLuongThayDoi AS CHAR) END), ' cái') AS action, "
+            + "         CONCAT('Mã SKU: ', COALESCE(bt.MaQuanLyHangHoa, b.MaBienThe), ' · Lý do: ', COALESCE(b.GhiChu, 'Cân bằng tồn kho')) AS reason, "
+            + "         b.NgayThucHien AS sortTime "
+            + "  FROM BienDongKho b "
+            + "  LEFT JOIN NguoiDung u ON u.MaNguoiDung = b.MaNhanVienThucHien "
+            + "  LEFT JOIN BienTheSanPham bt ON bt.MaBienThe = b.MaBienThe "
+            + "  UNION ALL "
+            + "  SELECT c.MaCaLamViec AS id, "
+            + "         DATE_FORMAT(COALESCE(c.ThoiGianDongCa, c.ThoiGianMoCa), '%d/%m/%Y %H:%i') AS time, "
+            + "         CONCAT(COALESCE(u.HoVaTen, u.TenDangNhap, 'Thu ngân'), ' · ', c.MaThuNgan) AS actor, "
+            + "         CONCAT('Quản lý ca POS [', c.TrangThaiCa, ']') AS action, "
+            + "         CONCAT('Đầu ca: ', FORMAT(c.TienMatDauCa, 0), 'đ · Thực tế đếm: ', COALESCE(CONCAT(FORMAT(c.TienMatKiemDemThucTe, 0), 'đ'), 'Chưa kết ca'), ' · ', COALESCE(c.GhiChuKetCa, '')) AS reason, "
+            + "         COALESCE(c.ThoiGianDongCa, c.ThoiGianMoCa) AS sortTime "
+            + "  FROM CaLamViecThuNgan c "
+            + "  LEFT JOIN NguoiDung u ON u.MaNguoiDung = c.MaThuNgan "
+            + "  UNION ALL "
+            + "  SELECT d.MaDonHang AS id, "
+            + "         DATE_FORMAT(d.NgayCapNhat, '%d/%m/%Y %H:%i') AS time, "
+            + "         CONCAT(COALESCE(u.HoVaTen, 'Khách hàng / Hệ thống'), ' · ', COALESCE(d.MaThuNgan, d.MaNguoiDung, 'Hệ thống')) AS actor, "
+            + "         CONCAT('Cập nhật đơn hàng [', d.TrangThaiDonHang, ']') AS action, "
+            + "         CONCAT('Kênh: ', d.KenhBanHang, ' · Phương thức: ', d.PhuongThucThanhToan, ' · ', COALESCE(d.GhiChuDonHang, '')) AS reason, "
+            + "         d.NgayCapNhat AS sortTime "
+            + "  FROM DonHang d "
+            + "  LEFT JOIN NguoiDung u ON u.MaNguoiDung = COALESCE(d.MaThuNgan, d.MaNguoiDung) "
+            + "  WHERE d.TrangThaiDonHang IN ('DA_HUY', 'TRA_HANG', 'HOAN_TAT') "
+            + ") AS log "
+            + "ORDER BY log.sortTime DESC LIMIT ? OFFSET ?",
+        size,
+        Db.offset(page, size));
+  }
+
   /** Thống kê doanh thu theo ngày và kênh bán hàng từ bảng DonHang. */
   @GetMapping("/admin/reports/finance")
   @PreAuthorize("hasRole('SHOP_ADMIN')")

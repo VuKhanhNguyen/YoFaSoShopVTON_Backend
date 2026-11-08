@@ -1,4 +1,5 @@
 -- Schema tu ERD_optimize.md; khong DROP/CREATE DATABASE, khong tai khoan mau.
+SET time_zone = '+07:00';
 CREATE TABLE VaiTro (
     MaVaiTro VARCHAR(10) NOT NULL COMMENT 'Mã định danh vai trò (VD: VT001, VT002)',
     TenVaiTro VARCHAR(50) NOT NULL COMMENT 'Tên mã vai trò Spring Security (VD: ROLE_CUSTOMER, ROLE_STAFF_CASHIER)',

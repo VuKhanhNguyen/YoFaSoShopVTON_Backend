@@ -28,8 +28,9 @@ public class OrderService {
           + " recipientName,SoDienThoaiNhan AS phone,DiaChiGiaoChiTiet AS address,TrangThaiDonHang"
           + " AS status,TrangThaiThanhToan AS paymentStatus,PhuongThucThanhToan AS"
           + " paymentMethod,TienGiamGia AS discount,PhiVanChuyen AS shippingFee,SoTienThuHo AS"
-          + " collectAmount,MaNguoiGiaoHang AS shipperId,NgayTao AS"
-          + " createdAt FROM DonHang";
+          + " collectAmount,MaNguoiGiaoHang AS shipperId,NgayTao AS createdAt,"
+          + " (SELECT COALESCE(SUM(c.SoLuong * c.DonGiaLucDatHang), 0) FROM ChiTietDonHang c WHERE c.MaDonHang=DonHang.MaDonHang) AS subtotal"
+          + " FROM DonHang";
 
   /** Nhận kho và idempotency trong cùng transaction MySQL. */
   public OrderService(Db db, InventoryService stock, Idempotency keys) {

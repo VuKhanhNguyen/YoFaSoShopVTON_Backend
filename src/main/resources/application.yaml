@@ -16,11 +16,11 @@ spring:
       mail.smtp.timeout: 5000
       mail.smtp.writetimeout: 5000
   datasource:
-    url: ${DB_URL:jdbc:mysql://127.0.0.1:3306/yofasoshop_db?connectionTimeZone=UTC}
+    url: ${DB_URL:jdbc:mysql://127.0.0.1:3306/yofasoshop_db?connectionTimeZone=Asia/Ho_Chi_Minh&serverTimezone=Asia/Ho_Chi_Minh}
     username: ${DB_USERNAME:yofaso_app}
     password: ${DB_PASSWORD:}
     hikari:
-      connection-init-sql: "SET time_zone = '+00:00'"
+      connection-init-sql: "SET time_zone = '+07:00'"
   jpa:
     open-in-view: false
     hibernate:
@@ -33,6 +33,8 @@ spring:
       max-file-size: 50MB
       max-request-size: 55MB
   jackson:
+    time-zone: "Asia/Ho_Chi_Minh"
+    locale: "vi_VN"
     deserialization:
       fail-on-unknown-properties: true
 server:

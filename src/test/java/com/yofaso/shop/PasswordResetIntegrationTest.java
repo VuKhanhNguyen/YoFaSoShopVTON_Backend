@@ -1,25 +1,49 @@
 package com.yofaso.shop;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
-import static org.mockito.ArgumentMatchers.*;
-import com.yofaso.shop.auth.*;
-import com.yofaso.shop.common.*;
-import java.net.*;
-import java.net.http.*;
-import java.nio.file.*;
-import java.util.*;
-import java.util.concurrent.*;
-import org.junit.jupiter.api.*;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.verify;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.test.context.*;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+
+import com.yofaso.shop.auth.AuthController;
+import com.yofaso.shop.auth.AuthService;
+import com.yofaso.shop.auth.OtpMailSender;
+import com.yofaso.shop.common.Db;
+import com.yofaso.shop.common.Problem;
+
 import tools.jackson.databind.json.JsonMapper;
 
-/** HTTP + MySQL 19 bảng thật; mailbox Mockito, tuyệt đối không gửi SMTP ra ngoài. */
+/** HTTP + MySQL ; mailbox Mockito, tuyệt đối không gửi SMTP ra ngoài. */
 @SpringBootTest(webEnvironment=SpringBootTest.WebEnvironment.RANDOM_PORT)
 class PasswordResetIntegrationTest {
   @LocalServerPort int port;

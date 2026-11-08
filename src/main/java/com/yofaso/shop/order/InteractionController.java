@@ -83,15 +83,23 @@ public class InteractionController {
     return Map.of("reviewId", id, "status", "CHO_DUYET");
   }
 
-  /** Chủ shop đọc danh sách đánh giá chờ duyệt. */
+  /** Chủ shop đọc danh sách đánh giá từ khách hàng kèm tên sản phẩm và tên người dùng. */
   @GetMapping("/admin/reviews")
   @PreAuthorize("hasRole('SHOP_ADMIN')")
   public List<Map<String, Object>> pending(
-      @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
+      @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "50") int size) {
     return db.rows(
-        "SELECT MaDanhGia AS reviewId,MaSanPham AS productId,SoSao AS stars,NoiDungBinhLuan AS"
-            + " comment,TrangThaiDuyet AS status FROM DanhGiaSanPham ORDER BY NgayDanhGia DESC"
-            + " LIMIT ? OFFSET ?",
+        "SELECT d.MaDanhGia AS reviewId, d.MaSanPham AS productId, s.TenSanPham AS productName, "
+            + "COALESCE(u.HoVaTen, 'Khách hàng') AS customerName, d.MaChiTietDonHang AS lineId, "
+            + "ct.MaDonHang AS orderId, "
+            + "d.SoSao AS stars, d.NoiDungBinhLuan AS comment, d.PhanHoiTuShop AS reply, "
+            + "d.TrangThaiDuyet AS status, d.HinhAnhThucTe AS photoUrl, d.NgayDanhGia AS createdAt, "
+            + "CASE WHEN d.MaChiTietDonHang IS NOT NULL THEN TRUE ELSE FALSE END AS verified "
+            + "FROM DanhGiaSanPham d "
+            + "LEFT JOIN SanPham s ON s.MaSanPham = d.MaSanPham "
+            + "LEFT JOIN NguoiDung u ON u.MaNguoiDung = d.MaNguoiDung "
+            + "LEFT JOIN ChiTietDonHang ct ON ct.MaChiTietDonHang = d.MaChiTietDonHang "
+            + "ORDER BY d.NgayDanhGia DESC LIMIT ? OFFSET ?",
         size,
         Db.offset(page, size));
   }

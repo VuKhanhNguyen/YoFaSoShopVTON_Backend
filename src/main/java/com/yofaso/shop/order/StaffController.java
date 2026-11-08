@@ -24,6 +24,13 @@ public class StaffController {
 
   public record Assignment(@NotBlank @Size(max = 20) String shipperId) {}
 
+  public record UpdateOrder(
+      @Size(max = 150) String recipientName,
+      @Size(max = 20) String phone,
+      @Size(max = 500) String address,
+      @Size(max = 1000) String note,
+      @Pattern(regexp = "CHO_XAC_NHAN|DANG_DONG_GOI|DANG_GIAO_HANG|HOAN_TAT|DA_HUY|TRA_HANG") String status) {}
+
   public record ShiftMoney(
       @NotNull @DecimalMin("0") @Digits(integer = 10, fraction = 2) BigDecimal amount,
       @Size(max = 1000) String note) {}
@@ -101,16 +108,84 @@ public class StaffController {
     return Map.of("userId", id);
   }
 
-  /** Danh sách user không có hash mật khẩu hoặc token. */
+  /** Danh sách user cho quản trị: hỗ trợ lọc role (CUSTOMER / STAFF / ALL), kèm địa chỉ mặc định và phân quyền; không lộ password. */
   @GetMapping("/admin/users")
   @PreAuthorize("hasRole('SHOP_ADMIN')")
   public List<Map<String, Object>> users(
-      @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
-    return db.rows(
-        "SELECT MaNguoiDung AS userId,TenDangNhap AS username,HoVaTen AS fullName,TrangThaiHoatDong"
-            + " AS status FROM NguoiDung ORDER BY MaNguoiDung LIMIT ? OFFSET ?",
+      @RequestParam(required = false) String role,
+      @RequestParam(defaultValue = "0") int page,
+      @RequestParam(defaultValue = "100") int size) {
+    String whereClause = "";
+    if ("CUSTOMER".equalsIgnoreCase(role)) {
+      whereClause = " WHERE EXISTS (SELECT 1 FROM NguoiDung_VaiTro nv JOIN VaiTro v ON v.MaVaiTro=nv.MaVaiTro WHERE nv.MaNguoiDung=u.MaNguoiDung AND v.TenVaiTro='ROLE_CUSTOMER')";
+    } else if ("STAFF".equalsIgnoreCase(role)) {
+      whereClause = " WHERE EXISTS (SELECT 1 FROM NguoiDung_VaiTro nv JOIN VaiTro v ON v.MaVaiTro=nv.MaVaiTro WHERE nv.MaNguoiDung=u.MaNguoiDung AND (v.TenVaiTro LIKE 'ROLE_STAFF_%' OR v.TenVaiTro='ROLE_SHOP_ADMIN'))";
+    }
+
+    var list = db.rows(
+        "SELECT u.MaNguoiDung AS userId, u.TenDangNhap AS username, u.HoVaTen AS fullName, "
+            + "u.SoDienThoai AS phone, u.Email AS email, u.AnhDaiDien AS avatar, "
+            + "u.DiemTichLuy AS points, u.HangThanhVien AS membership, u.NgaySinh AS dateOfBirth, "
+            + "u.GioiTinh AS gender, u.TrangThaiHoatDong AS status, u.NgayTao AS createdAt, "
+            + "dc.SoNhaTenDuong AS street, dc.PhuongXa AS ward, dc.TinhThanhPho AS city "
+            + "FROM NguoiDung u "
+            + "LEFT JOIN SoDiaChi dc ON dc.MaNguoiDung=u.MaNguoiDung AND dc.LaMacDinh=1"
+            + whereClause
+            + " ORDER BY u.MaNguoiDung LIMIT ? OFFSET ?",
         size,
         Db.offset(page, size));
+
+    for (var u : list) {
+      String uid = Db.text(u, "userId");
+      var roles = db.rows(
+          "SELECT v.MaVaiTro AS roleId, v.TenVaiTro AS name, v.TenHienThi AS label "
+              + "FROM VaiTro v JOIN NguoiDung_VaiTro r ON r.MaVaiTro=v.MaVaiTro WHERE r.MaNguoiDung=?",
+          uid);
+      u.put("roles", roles);
+
+      // Ghép chuỗi địa chỉ hoàn chỉnh từ SoNhaTenDuong, PhuongXa, TinhThanhPho
+      String street = Db.text(u, "street");
+      String ward = Db.text(u, "ward");
+      String city = Db.text(u, "city");
+      List<String> parts = new ArrayList<>();
+      if (!street.isBlank()) parts.add(street);
+      if (!ward.isBlank()) parts.add(ward);
+      if (!city.isBlank()) parts.add(city);
+      u.put("address", String.join(", ", parts));
+    }
+    return list;
+  }
+
+  /** Xóa hoặc vô hiệu hóa tài khoản nhân sự; bảo toàn dữ liệu nếu đã có lịch sử đơn/ca. */
+  @DeleteMapping("/admin/users/{id}")
+  @Transactional
+  @PreAuthorize("hasRole('SHOP_ADMIN')")
+  public Map<String, Object> deleteUser(@PathVariable String id, Authentication a) {
+    Problem.require(
+        !id.equals(a.getName()),
+        409,
+        "SELF_CHANGE_FORBIDDEN",
+        "Không thể xóa tài khoản admin đang đăng nhập.");
+    var user = db.one("SELECT MaNguoiDung FROM NguoiDung WHERE MaNguoiDung=?", id);
+    Problem.require(!user.isEmpty(), 404, "NOT_FOUND", "Không tìm thấy người dùng.");
+
+    long ordersCount = db.count("SELECT COUNT(*) FROM DonHang WHERE MaThuNgan=? OR MaNguoiGiaoHang=? OR MaNguoiDung=?", id, id, id);
+    long shiftsCount = db.count("SELECT COUNT(*) FROM CaLamViecThuNgan WHERE MaThuNgan=?", id);
+
+    if (ordersCount > 0 || shiftsCount > 0) {
+      db.exec("UPDATE NguoiDung SET TrangThaiHoatDong='KHOA_TAM_THOI' WHERE MaNguoiDung=?", id);
+      db.runtime().bump(id);
+      db.audit(a.getName(), "USER_LOCK_RETAIN_DATA", id);
+      return Map.of("deleted", false, "locked", true, "message", "Tài khoản có dữ liệu lịch sử đơn hàng hoặc ca làm việc nên hệ thống đã tự động khóa bảo toàn.");
+    }
+
+    db.exec("DELETE FROM NguoiDung_VaiTro WHERE MaNguoiDung=?", id);
+    db.exec("DELETE FROM SoDiaChi WHERE MaNguoiDung=?", id);
+    db.exec("DELETE FROM NguoiDung_KhuyenMai WHERE MaNguoiDung=?", id);
+    db.exec("DELETE FROM NguoiDung WHERE MaNguoiDung=?", id);
+    db.runtime().bump(id);
+    db.audit(a.getName(), "USER_DELETE", id);
+    return Map.of("deleted", true);
   }
 
   /** Đổi role và vô hiệu token cũ; không cho admin tự tước quyền của mình. */
@@ -453,6 +528,18 @@ public class StaffController {
     return Map.of("promotionId", id);
   }
 
+  /** Danh sách toàn bộ chương trình khuyến mãi cho chủ shop quản lý đa kênh. */
+  @GetMapping("/admin/promotions")
+  @PreAuthorize("hasRole('SHOP_ADMIN')")
+  public List<Map<String, Object>> adminPromotions() {
+    return db.rows(
+        "SELECT MaKhuyenMai AS promotionId, MaPhieuGiamGia AS code, TenChuongTrinh AS name, "
+            + "LoaiGiamGia AS type, GiaTriGiam AS value, GiaTriDonHangToiThieu AS minimumTotal, "
+            + "GiamToiDa AS maxDiscount, SoLuongPhatHanh AS quantity, SoLuongDaDung AS used, "
+            + "NgayBatDau AS startsAt, NgayKetThuc AS expiresAt, TrangThai AS status "
+            + "FROM KhuyenMai ORDER BY NgayBatDau DESC, MaKhuyenMai DESC");
+  }
+
   /** Dừng voucher mà vẫn giữ lịch sử đơn đã áp dụng. */
   @DeleteMapping("/admin/promotions/{id}")
   @PreAuthorize("hasRole('SHOP_ADMIN')")
@@ -463,6 +550,251 @@ public class StaffController {
         "NOT_FOUND",
         "Không có voucher.");
     return Map.of("paused", true);
+  }
+
+  /** Cập nhật thông tin giao hàng/người nhận/ghi chú đơn hàng cho admin. */
+  @PatchMapping("/admin/orders/{id}")
+  @Transactional
+  @PreAuthorize("hasRole('SHOP_ADMIN')")
+  public Map<String, Object> updateOrder(
+      @PathVariable String id, @Valid @RequestBody UpdateOrder b, Authentication a) {
+    var order = db.one("SELECT MaDonHang, TrangThaiDonHang FROM DonHang WHERE MaDonHang=?", id);
+    Problem.require(!order.isEmpty(), 404, "NOT_FOUND", "Không tìm thấy đơn hàng.");
+
+    List<String> updates = new ArrayList<>();
+    List<Object> params = new ArrayList<>();
+
+    if (b.recipientName() != null && !b.recipientName().isBlank()) {
+      updates.add("TenNguoiNhan=?");
+      params.add(b.recipientName());
+    }
+    if (b.phone() != null && !b.phone().isBlank()) {
+      updates.add("SoDienThoaiNguoiNhan=?");
+      params.add(b.phone());
+    }
+    if (b.address() != null && !b.address().isBlank()) {
+      updates.add("DiaChiGiaoHang=?");
+      params.add(b.address());
+    }
+    if (b.note() != null) {
+      updates.add("GhiChuDonHang=?");
+      params.add(b.note());
+    }
+    if (b.status() != null && !b.status().isBlank()) {
+      updates.add("TrangThaiDonHang=?");
+      params.add(b.status());
+    }
+
+    if (!updates.isEmpty()) {
+      params.add(id);
+      db.exec("UPDATE DonHang SET " + String.join(", ", updates) + " WHERE MaDonHang=?", params.toArray());
+      db.audit(a.getName(), "ORDER_UPDATE", id);
+    }
+
+    return Map.of("updated", true, "orderId", id);
+  }
+
+  /** Danh sách ca làm việc thu ngân POS cho chủ shop theo dõi và duyệt bàn giao két. */
+  @GetMapping("/admin/shifts")
+  @PreAuthorize("hasRole('SHOP_ADMIN')")
+  public List<Map<String, Object>> adminShifts(
+      @RequestParam(defaultValue = "0") int page,
+      @RequestParam(defaultValue = "50") int size) {
+    return db.rows(
+        "SELECT c.MaCaLamViec AS shiftId, c.MaThuNgan AS cashierId, "
+            + "COALESCE(u.HoVaTen, u.TenDangNhap) AS cashierName, "
+            + "c.ThoiGianMoCa AS openedAt, c.ThoiGianDongCa AS closedAt, "
+            + "c.TienMatDauCa AS openingCash, c.TienMatKiemDemThucTe AS countedCash, "
+            + "c.TrangThaiCa AS status, c.GhiChuKetCa AS note "
+            + "FROM CaLamViecThuNgan c "
+            + "LEFT JOIN NguoiDung u ON u.MaNguoiDung = c.MaThuNgan "
+            + "ORDER BY c.ThoiGianMoCa DESC LIMIT ? OFFSET ?",
+        size,
+        Db.offset(page, size));
+  }
+
+  /** Yêu cầu đếm lại / từ chối duyệt ca. */
+  @PostMapping("/admin/shifts/{id}/reject")
+  @PreAuthorize("hasRole('SHOP_ADMIN')")
+  public Map<String, Object> rejectShift(@PathVariable String id, Authentication a) {
+    Problem.require(
+        db.exec(
+                "UPDATE CaLamViecThuNgan SET TrangThaiCa='DANG_MO' WHERE"
+                    + " MaCaLamViec=? AND TrangThaiCa='DA_DONG_CHO_DUYET'",
+                id)
+            == 1,
+        409,
+        "SHIFT_STATE_INVALID",
+        "Ca không ở trạng thái chờ duyệt.");
+    db.audit(a.getName(), "SHIFT_REJECT", id);
+    return Map.of("rejected", true);
+  }
+
+  /** Danh sách biến động kho toàn hệ thống cho chủ shop kiểm tra và đối soát. */
+  @GetMapping("/admin/inventory/movements")
+  @PreAuthorize("hasRole('SHOP_ADMIN')")
+  public List<Map<String, Object>> adminMovements(
+      @RequestParam(defaultValue = "0") int page,
+      @RequestParam(defaultValue = "50") int size) {
+    return db.rows(
+        "SELECT b.MaBienDong AS movementId, b.MaBienThe AS variantId, "
+            + "COALESCE(s.TenSanPham, 'Sản phẩm') AS productName, "
+            + "bt.KichCo AS size, bt.TenMau AS color, "
+            + "b.LoaiBienDong AS type, b.SoLuongThayDoi AS delta, "
+            + "b.SoLuongTonTruoc AS beforeStock, b.SoLuongTonSau AS afterStock, "
+            + "b.MaThamChieu AS referenceId, b.GhiChu AS reason, "
+            + "b.MaNhanVienThucHien AS performerId, COALESCE(u.HoVaTen, b.MaNhanVienThucHien) AS performerName, "
+            + "b.NgayThucHien AS createdAt "
+            + "FROM BienDongKho b "
+            + "LEFT JOIN BienTheSanPham bt ON bt.MaBienThe = b.MaBienThe "
+            + "LEFT JOIN SanPham s ON s.MaSanPham = bt.MaSanPham "
+            + "LEFT JOIN NguoiDung u ON u.MaNguoiDung = b.MaNhanVienThucHien "
+            + "ORDER BY b.NgayThucHien DESC LIMIT ? OFFSET ?",
+        size,
+        Db.offset(page, size));
+  }
+
+  /** Thống kê doanh thu theo ngày và kênh bán hàng từ bảng DonHang. */
+  @GetMapping("/admin/reports/finance")
+  @PreAuthorize("hasRole('SHOP_ADMIN')")
+  public Map<String, Object> financeReport() {
+    List<Map<String, Object>> daily =
+        db.rows(
+            "SELECT DATE_FORMAT(d.NgayTao, '%Y-%m-%d') AS day, "
+                + "COALESCE(SUM(CASE WHEN d.KenhBanHang='ONLINE_APP' THEN (COALESCE(ct.subtotal, 0) + d.PhiVanChuyen - d.TienGiamGia) ELSE 0 END), 0) AS online, "
+                + "COALESCE(SUM(CASE WHEN d.KenhBanHang='TAI_QUAY_POS' THEN (COALESCE(ct.subtotal, 0) + d.PhiVanChuyen - d.TienGiamGia) ELSE 0 END), 0) AS pos, "
+                + "COALESCE(SUM(COALESCE(ct.subtotal, 0) + d.PhiVanChuyen - d.TienGiamGia), 0) AS total, "
+                + "COUNT(d.MaDonHang) AS orderCount "
+                + "FROM DonHang d "
+                + "LEFT JOIN (SELECT MaDonHang, SUM(SoLuong * DonGiaLucDatHang) AS subtotal FROM ChiTietDonHang GROUP BY MaDonHang) ct ON ct.MaDonHang = d.MaDonHang "
+                + "WHERE d.TrangThaiDonHang='HOAN_TAT' "
+                + "GROUP BY DATE_FORMAT(d.NgayTao, '%Y-%m-%d') "
+                + "ORDER BY day ASC");
+
+    List<Map<String, Object>> hourly =
+        db.rows(
+            "SELECT DATE_FORMAT(d.NgayTao, '%H') AS hour, "
+                + "COALESCE(SUM(CASE WHEN d.KenhBanHang='ONLINE_APP' THEN (COALESCE(ct.subtotal, 0) + d.PhiVanChuyen - d.TienGiamGia) ELSE 0 END), 0) AS online, "
+                + "COALESCE(SUM(CASE WHEN d.KenhBanHang='TAI_QUAY_POS' THEN (COALESCE(ct.subtotal, 0) + d.PhiVanChuyen - d.TienGiamGia) ELSE 0 END), 0) AS pos, "
+                + "COALESCE(SUM(COALESCE(ct.subtotal, 0) + d.PhiVanChuyen - d.TienGiamGia), 0) AS total, "
+                + "COUNT(d.MaDonHang) AS orderCount "
+                + "FROM DonHang d "
+                + "LEFT JOIN (SELECT MaDonHang, SUM(SoLuong * DonGiaLucDatHang) AS subtotal FROM ChiTietDonHang GROUP BY MaDonHang) ct ON ct.MaDonHang = d.MaDonHang "
+                + "WHERE d.TrangThaiDonHang='HOAN_TAT' "
+                + "AND DATE(d.NgayTao) = CURRENT_DATE() "
+                + "GROUP BY DATE_FORMAT(d.NgayTao, '%H') "
+                + "ORDER BY hour ASC");
+
+    List<Map<String, Object>> monthly =
+        db.rows(
+            "SELECT DATE_FORMAT(d.NgayTao, '%Y-%m') AS month, "
+                + "DATE_FORMAT(d.NgayTao, 'Tháng %m/%Y') AS label, "
+                + "COALESCE(SUM(CASE WHEN d.KenhBanHang='ONLINE_APP' THEN (COALESCE(ct.subtotal, 0) + d.PhiVanChuyen - d.TienGiamGia) ELSE 0 END), 0) AS online, "
+                + "COALESCE(SUM(CASE WHEN d.KenhBanHang='TAI_QUAY_POS' THEN (COALESCE(ct.subtotal, 0) + d.PhiVanChuyen - d.TienGiamGia) ELSE 0 END), 0) AS pos, "
+                + "COALESCE(SUM(COALESCE(ct.subtotal, 0) + d.PhiVanChuyen - d.TienGiamGia), 0) AS total, "
+                + "COUNT(d.MaDonHang) AS orderCount "
+                + "FROM DonHang d "
+                + "LEFT JOIN (SELECT MaDonHang, SUM(SoLuong * DonGiaLucDatHang) AS subtotal FROM ChiTietDonHang GROUP BY MaDonHang) ct ON ct.MaDonHang = d.MaDonHang "
+                + "WHERE d.TrangThaiDonHang='HOAN_TAT' "
+                + "GROUP BY DATE_FORMAT(d.NgayTao, '%Y-%m'), DATE_FORMAT(d.NgayTao, 'Tháng %m/%Y') "
+                + "ORDER BY month ASC");
+
+    List<Map<String, Object>> payments =
+        db.rows(
+            "SELECT d.PhuongThucThanhToan AS method, "
+                + "COALESCE(SUM(COALESCE(ct.subtotal, 0) + d.PhiVanChuyen - d.TienGiamGia), 0) AS total, "
+                + "COUNT(d.MaDonHang) AS orderCount "
+                + "FROM DonHang d "
+                + "LEFT JOIN (SELECT MaDonHang, SUM(SoLuong * DonGiaLucDatHang) AS subtotal FROM ChiTietDonHang GROUP BY MaDonHang) ct ON ct.MaDonHang = d.MaDonHang "
+                + "WHERE d.TrangThaiDonHang='HOAN_TAT' "
+                + "GROUP BY d.PhuongThucThanhToan");
+
+    List<Map<String, Object>> customers =
+        db.rows(
+            "SELECT COALESCE(u.HangThanhVien, 'VANG_LAI') AS tier, "
+                + "COUNT(DISTINCT d.MaDonHang) AS orderCount, "
+                + "COALESCE(SUM(COALESCE(ct.subtotal, 0) + d.PhiVanChuyen - d.TienGiamGia), 0) AS totalRevenue "
+                + "FROM DonHang d "
+                + "LEFT JOIN NguoiDung u ON u.MaNguoiDung = d.MaNguoiDung "
+                + "LEFT JOIN (SELECT MaDonHang, SUM(SoLuong * DonGiaLucDatHang) AS subtotal FROM ChiTietDonHang GROUP BY MaDonHang) ct ON ct.MaDonHang = d.MaDonHang "
+                + "WHERE d.TrangThaiDonHang='HOAN_TAT' "
+                + "GROUP BY COALESCE(u.HangThanhVien, 'VANG_LAI')");
+
+    long totalOrders = db.count("SELECT COUNT(*) FROM DonHang");
+    long returnedOrders = db.count("SELECT COUNT(*) FROM DonHang WHERE TrangThaiDonHang='TRA_HANG'");
+    long completedOrders = db.count("SELECT COUNT(*) FROM DonHang WHERE TrangThaiDonHang='HOAN_TAT'");
+    double returnRate =
+        totalOrders > 0
+            ? Math.round(((double) returnedOrders / totalOrders) * 1000.0) / 10.0
+            : 0.0;
+
+    var qrExpected =
+        db.one(
+            "SELECT COALESCE(SUM(COALESCE(ct.subtotal, 0) + d.PhiVanChuyen - d.TienGiamGia), 0) AS total "
+                + "FROM DonHang d LEFT JOIN (SELECT MaDonHang, SUM(SoLuong * DonGiaLucDatHang) AS subtotal FROM ChiTietDonHang GROUP BY MaDonHang) ct ON ct.MaDonHang = d.MaDonHang "
+                + "WHERE d.TrangThaiDonHang='HOAN_TAT' AND d.PhuongThucThanhToan IN ('VIETQR_CHUYEN_KHOAN_ONLINE', 'VIETQR_TAI_QUAY')");
+    var qrActual =
+        db.one(
+            "SELECT COALESCE(SUM(COALESCE(ct.subtotal, 0) + d.PhiVanChuyen - d.TienGiamGia), 0) AS total "
+                + "FROM DonHang d LEFT JOIN (SELECT MaDonHang, SUM(SoLuong * DonGiaLucDatHang) AS subtotal FROM ChiTietDonHang GROUP BY MaDonHang) ct ON ct.MaDonHang = d.MaDonHang "
+                + "WHERE d.TrangThaiDonHang='HOAN_TAT' AND d.PhuongThucThanhToan IN ('VIETQR_CHUYEN_KHOAN_ONLINE', 'VIETQR_TAI_QUAY') AND d.TrangThaiThanhToan='DA_THANH_TOAN'");
+
+    var cashExpected =
+        db.one(
+            "SELECT COALESCE(SUM(COALESCE(ct.subtotal, 0) + d.PhiVanChuyen - d.TienGiamGia), 0) AS total "
+                + "FROM DonHang d LEFT JOIN (SELECT MaDonHang, SUM(SoLuong * DonGiaLucDatHang) AS subtotal FROM ChiTietDonHang GROUP BY MaDonHang) ct ON ct.MaDonHang = d.MaDonHang "
+                + "WHERE d.TrangThaiDonHang='HOAN_TAT' AND d.PhuongThucThanhToan='TIEN_MAT_TAI_QUAY'");
+    var cashActual =
+        db.one(
+            "SELECT COALESCE((SELECT SUM(TienMatKiemDemThucTe) FROM CaLamViecThuNgan WHERE TienMatKiemDemThucTe IS NOT NULL), "
+                + "(SELECT COALESCE(SUM(COALESCE(ct.subtotal, 0) + d.PhiVanChuyen - d.TienGiamGia), 0) FROM DonHang d LEFT JOIN (SELECT MaDonHang, SUM(SoLuong * DonGiaLucDatHang) AS subtotal FROM ChiTietDonHang GROUP BY MaDonHang) ct ON ct.MaDonHang = d.MaDonHang WHERE d.TrangThaiDonHang='HOAN_TAT' AND d.PhuongThucThanhToan='TIEN_MAT_TAI_QUAY')) AS total");
+
+    var codExpected =
+        db.one(
+            "SELECT COALESCE(SUM(COALESCE(ct.subtotal, 0) + d.PhiVanChuyen - d.TienGiamGia), 0) AS total "
+                + "FROM DonHang d LEFT JOIN (SELECT MaDonHang, SUM(SoLuong * DonGiaLucDatHang) AS subtotal FROM ChiTietDonHang GROUP BY MaDonHang) ct ON ct.MaDonHang = d.MaDonHang "
+                + "WHERE d.TrangThaiDonHang='HOAN_TAT' AND d.PhuongThucThanhToan='COD_TIEN_MAT_KHI_NHAN'");
+    var codActual =
+        db.one(
+            "SELECT COALESCE(SUM(COALESCE(ct.subtotal, 0) + d.PhiVanChuyen - d.TienGiamGia), 0) AS total "
+                + "FROM DonHang d LEFT JOIN (SELECT MaDonHang, SUM(SoLuong * DonGiaLucDatHang) AS subtotal FROM ChiTietDonHang GROUP BY MaDonHang) ct ON ct.MaDonHang = d.MaDonHang "
+                + "WHERE d.TrangThaiDonHang='HOAN_TAT' AND d.PhuongThucThanhToan='COD_TIEN_MAT_KHI_NHAN' AND d.TrangThaiThanhToan='DA_THANH_TOAN'");
+
+    List<Map<String, Object>> flows = new ArrayList<>();
+    flows.add(
+        Map.of(
+            "id", "qr",
+            "label", "VietQR Online & Tại quầy",
+            "source", "Sao kê ngân hàng",
+            "expected", qrExpected.getOrDefault("total", 0),
+            "actual", qrActual.getOrDefault("total", 0)));
+    flows.add(
+        Map.of(
+            "id", "cash",
+            "label", "Tiền mặt két POS",
+            "source", "Biên bản kết ca thu ngân",
+            "expected", cashExpected.getOrDefault("total", 0),
+            "actual", cashActual.getOrDefault("total", 0)));
+    flows.add(
+        Map.of(
+            "id", "cod",
+            "label", "Tiền COD Shipper nộp",
+            "source", "Đơn hàng xuất kho & biên nhận",
+            "expected", codExpected.getOrDefault("total", 0),
+            "actual", codActual.getOrDefault("total", 0)));
+
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("daily", daily);
+    result.put("hourly", hourly);
+    result.put("monthly", monthly);
+    result.put("payments", payments);
+    result.put("customers", customers);
+    result.put("flows", flows);
+    result.put("returnRate", returnRate);
+    result.put("totalOrders", totalOrders);
+    result.put("completedOrders", completedOrders);
+    result.put("returnedOrders", returnedOrders);
+    return result;
   }
 
   /** Dashboard doanh thu snapshot của các đơn hoàn tất; chưa coi là báo cáo kế toán. */

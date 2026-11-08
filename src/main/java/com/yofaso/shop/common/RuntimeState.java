@@ -29,8 +29,20 @@ public class RuntimeState implements AutoCloseable {
     Files.createDirectories(root);
     this.json = json;
     channel = FileChannel.open(root.resolve("backend.lock"), StandardOpenOption.CREATE, StandardOpenOption.WRITE);
-    lease = channel.tryLock();
-    if (lease == null) { channel.close(); throw new IOException("Runtime đã có Backend; mỗi instance cần volume riêng."); }
+    FileLock l = null;
+    for (int i = 0; i < 3 && l == null; i++) {
+      try {
+        l = channel.tryLock();
+      } catch (Exception ignored) {}
+      if (l == null && i < 2) {
+        try { Thread.sleep(500); } catch (InterruptedException ignored) {}
+      }
+    }
+    lease = l;
+    if (lease == null) {
+      channel.close();
+      throw new IOException("Runtime đã có Backend đang chạy giữ lock tại '" + root.resolve("backend.lock") + "'; vui lòng dừng tiến trình Backend trước đó.");
+    }
   }
 
   @SuppressWarnings("unchecked")
@@ -83,5 +95,9 @@ public class RuntimeState implements AutoCloseable {
     return row == null ? 0 : ((Number)row.get("version")).longValue();
   }
   public synchronized void bump(String owner) { put("auth", owner, Map.of("version", version(owner)+1)); revoke(owner); }
-  @PreDestroy public void close() throws IOException { lease.release(); channel.close(); }
+  @PreDestroy
+  public void close() throws IOException {
+    if (lease != null && lease.isValid()) lease.release();
+    if (channel != null && channel.isOpen()) channel.close();
+  }
 }

@@ -36,7 +36,7 @@ def main():
         raise ValueError("Seed không còn đúng 15 người dùng; cần đối chiếu lại")
     local, domain = mailbox.split("@")
     lines = [
-        "-- DEV/TEST ONLY. Chọn database test đúng 19 bảng trước khi Execute.",
+        "-- DEV/TEST ONLY. Chọn database test đúng 20 bảng trước khi Execute.",
         "-- 15 alias cùng về một hộp thư; không dùng chung hộp thư cho người dùng production.",
         "SELECT DATABASE();",
         "START TRANSACTION;",

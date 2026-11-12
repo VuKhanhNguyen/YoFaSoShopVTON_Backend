@@ -1,6 +1,6 @@
 # YoFaSoShop Backend
 
-> **30/10/2026 — ERD cố định 19 bảng:** Backend ghi MySQL, AI không kết nối SQL. Runtime dùng manifest file bền vững trên volume riêng, không SQLite/Flyway/history table. Xem [setupGuide](../YoFaSoShop_Docs/extra-info/setupGuide.md) và [migrationAndLocationGuide](../YoFaSoShop_Docs/extra-info/migrationAndLocationGuide.md).
+> **30/10/2026 — ERD cố định 20 bảng:** Backend ghi MySQL, AI không kết nối SQL. Runtime dùng manifest file bền vững trên volume riêng, không SQLite/Flyway/history table. Xem [setupGuide](../YoFaSoShop_Docs/extra-info/setupGuide.md) và [migrationAndLocationGuide](../YoFaSoShop_Docs/extra-info/migrationAndLocationGuide.md).
 
 Spring Boot 4.1.2, Java target 21, Maven Wrapper, MySQL 8.0+, Spring Security JWT.
 Source sử dụng **JdbcTemplate và SQL tham số hóa** để bám schema ERD; chưa có Entity/repository JPA. Dependency JPA của khung vẫn giữ, `ddl-auto=none` và sql.init.mode=never; schema được import tường minh, SchemaGuard chỉ kiểm tra. Không dùng `ddl-auto=create/update` để sửa lỗi schema.
@@ -8,7 +8,7 @@ Source sử dụng **JdbcTemplate và SQL tham số hóa** để bám schema ERD
 ## Chạy local
 
 1. Tạo **database dev mới** và user bằng `scripts/create_dev_database.sql` sau khi đổi mật khẩu mẫu. Script không được tự chạy trong lượt coding. Nếu user đã tồn tại thì `CREATE USER IF NOT EXISTS` không đổi mật khẩu.
-2. Sau khi tạo/chọn schema trống, import `src/main/resources/db/schema.sql` bằng tài khoản quản trị để có đúng 19 bảng + 5 role (không import lại lên DB đã có bảng). Chạy `scripts/init_env.ps1` một lần. Script giữ `.env` nếu đã có, tạo JWT key ngẫu nhiên và có thể chép key AI từ `.env` private của AI Service. Không in key. File `.env` đã được tạo trong lượt hiện thực; điền `DB_PASSWORD` và kiểm tra `DB_URL`/`DB_USERNAME` thực tế.
+2. Sau khi tạo/chọn schema trống, import `src/main/resources/db/schema.sql` bằng tài khoản quản trị để có đúng 1 bảng + 5 role (không import lại lên DB đã có bảng). Chạy `scripts/init_env.ps1` một lần. Script giữ `.env` nếu đã có, tạo JWT key ngẫu nhiên và có thể chép key AI từ `.env` private của AI Service. Không in key. File `.env` đã được tạo trong lượt hiện thực; điền `DB_PASSWORD` và kiểm tra `DB_URL`/`DB_USERNAME` thực tế.
 3. Để có chủ shop lần đầu, điền `BOOTSTRAP_ADMIN_USERNAME`, `BOOTSTRAP_ADMIN_PASSWORD` (ít nhất 10 ký tự, có chữ/số), `BOOTSTRAP_ADMIN_PHONE` trong `.env`. Khởi động thành công và đăng nhập được thì xóa ba giá trị bootstrap khỏi `.env`; user đã được lưu MySQL. Không có admin/password mặc định.
 4. Từ thư mục Backend:
 

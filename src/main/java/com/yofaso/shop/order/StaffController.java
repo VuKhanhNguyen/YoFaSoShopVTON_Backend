@@ -241,7 +241,9 @@ public class StaffController {
   @GetMapping("/staff/variants/by-sku")
   @PreAuthorize("hasAnyRole('SHOP_ADMIN','STAFF_CASHIER','STAFF_WAREHOUSE')")
   public Map<String, Object> barcode(@RequestParam String sku) {
-    return db.one(CatalogService.VARIANT + " WHERE MaQuanLyHangHoa=?", sku);
+    return db.one(
+        "SELECT b.MaBienThe AS variantId,b.MaSanPham AS productId,b.MaQuanLyHangHoa AS sku,b.KichCo AS size,b.TenMau AS colorName,b.MaMauSac AS colors,b.GiaNiemYet AS price,b.GiaKhuyenMai AS salePrice,b.SoLuongTonKho AS stock,b.ViTriGiaKe AS shelf,b.TrangThai AS status,p.TenSanPham AS productName,p.TenSanPham AS name,p.MaDanhMuc AS categoryId FROM BienTheSanPham b JOIN SanPham p ON p.MaSanPham=b.MaSanPham WHERE b.MaQuanLyHangHoa=? OR b.MaBienThe=?",
+        sku, sku);
   }
 
   /** Khách tại quầy chỉ tra bằng số điện thoại chính xác, không liệt kê cả database. */
@@ -304,46 +306,183 @@ public class StaffController {
         Db.offset(page, size));
   }
 
-  /** Đơn staff: shipper chỉ thấy đơn được phân, cashier chỉ thấy đơn mình lập. */
+  /** Chuẩn hóa tọa độ kệ từ CSDL sang đối tượng {day, ke, tang} cho UI kho điều phối. */
+  public static Map<String, Object> parseShelf(String raw) {
+    if (raw == null || raw.isBlank()) {
+      return Map.of("day", "A", "ke", "KHO-01", "tang", 1);
+    }
+    String clean = raw.trim().toUpperCase(Locale.ROOT);
+    String day = "A";
+    int tang = 1;
+    var m = java.util.regex.Pattern.compile("(?:KE-)?([A-Z])[-_]?(\\d+)?").matcher(clean);
+    if (m.find()) {
+      if (m.group(1) != null) day = m.group(1);
+      if (m.group(2) != null) {
+        try {
+          tang = (Integer.parseInt(m.group(2)) % 4) + 1;
+        } catch (Exception ignored) {}
+      }
+    }
+    return Map.of("day", day, "ke", clean, "tang", tang);
+  }
+
+  /** Đơn staff: shipper thấy đơn được phân hoặc nhận thêm, kho thấy toàn bộ đơn kèm chi tiết dòng hàng & kệ. */
   @GetMapping("/staff/orders")
   @PreAuthorize("hasAnyRole('SHOP_ADMIN','STAFF_WAREHOUSE','STAFF_CASHIER','STAFF_SHIPPER')")
   public List<Map<String, Object>> staffOrders(
       Authentication a,
+      @RequestParam(required = false) String status,
       @RequestParam(defaultValue = "0") int page,
-      @RequestParam(defaultValue = "20") int size) {
-    String where =
-        has(a, "SHOP_ADMIN") || has(a, "STAFF_WAREHOUSE")
-            ? " WHERE 1=1"
-            : has(a, "STAFF_CASHIER") ? " WHERE MaThuNgan=?" : " WHERE MaNguoiGiaoHang=?";
-    return where.contains("?")
-        ? db.rows(
-            OrderService.SUMMARY + where + " ORDER BY NgayTao DESC LIMIT ? OFFSET ?",
-            a.getName(),
-            size,
-            Db.offset(page, size))
-        : db.rows(
-            OrderService.SUMMARY + where + " ORDER BY NgayTao DESC LIMIT ? OFFSET ?",
-            size,
-            Db.offset(page, size));
+      @RequestParam(defaultValue = "100") int size) {
+    String where;
+    List<Object> params = new ArrayList<>();
+    if (has(a, "SHOP_ADMIN") || has(a, "STAFF_WAREHOUSE")) {
+      if (status != null && !status.isBlank()) {
+        where = " WHERE TrangThaiDonHang=?";
+        params.add(status);
+      } else {
+        where = " WHERE 1=1";
+      }
+    } else if (has(a, "STAFF_CASHIER")) {
+      where = " WHERE MaThuNgan=?";
+      params.add(a.getName());
+    } else {
+      where = " WHERE MaNguoiGiaoHang=?";
+      params.add(a.getName());
+    }
+
+    params.add(size);
+    params.add(Db.offset(page, size));
+
+    var list = db.rows(
+        OrderService.SUMMARY + where + " ORDER BY NgayTao DESC LIMIT ? OFFSET ?",
+        params.toArray());
+
+    for (var r : list) {
+      String id = Db.text(r, "orderId");
+      r.put("id", id);
+      r.put("receiver", r.get("recipientName"));
+      r.put("phone", r.get("phone"));
+      r.put("address", r.get("address"));
+      r.put("placedAt", r.get("createdAt") != null ? r.get("createdAt").toString() : "");
+
+      String pm = Db.text(r, "paymentMethod");
+      r.put("payment", pm.contains("VIETQR") ? "VIETQR" : "COD");
+      r.put("cod", r.get("collectAmount") != null ? ((Number) r.get("collectAmount")).doubleValue() : 0.0);
+
+      String shipperId = (String) r.get("shipperId");
+      if (shipperId != null && !shipperId.isBlank()) {
+        var sh = db.one("SELECT HoVaTen FROM NguoiDung WHERE MaNguoiDung=?", shipperId);
+        String name = Db.text(sh, "HoVaTen");
+        r.put("shipper", name.isBlank() ? "Shipper " + shipperId : name);
+        r.put("shipperName", name.isBlank() ? "Shipper " + shipperId : name);
+      } else {
+        r.put("shipper", "Chưa phân công");
+        r.put("shipperName", "Chưa phân công");
+      }
+
+      var lines = db.rows(
+          "SELECT c.MaChiTietDonHang AS lineId, c.MaBienThe AS variantId, "
+              + "b.MaQuanLyHangHoa AS sku, b.MaQuanLyHangHoa AS barcode, "
+              + "c.TenSanPhamLucDatHang AS ten, c.TenSanPhamLucDatHang AS name, "
+              + "c.KichCoLucDatHang AS size, c.TenMauLucDatHang AS mau, c.TenMauLucDatHang AS colorName, "
+              + "c.SoLuong AS qty, c.SoLuong AS quantity, c.DonGiaLucDatHang AS unitPrice, "
+              + "b.ViTriGiaKe AS shelf "
+              + "FROM ChiTietDonHang c "
+              + "JOIN BienTheSanPham b ON b.MaBienThe = c.MaBienThe "
+              + "WHERE c.MaDonHang=? ORDER BY b.ViTriGiaKe, b.MaQuanLyHangHoa",
+          id);
+
+      for (var l : lines) {
+        String shelfStr = (String) l.get("shelf");
+        l.put("shelf", parseShelf(shelfStr));
+      }
+
+      r.put("lines", lines);
+      r.put("items", lines);
+    }
+    return list;
   }
 
-  /** Chi tiết để in pick list/receipt; staff không được lấy đơn ngoài phạm vi. */
+  /** Danh sách nhân viên giao hàng đang hoạt động để kho bàn giao kiện hàng. */
+  @GetMapping("/staff/shippers")
+  @PreAuthorize("hasAnyRole('SHOP_ADMIN','STAFF_WAREHOUSE')")
+  public List<Map<String, Object>> shippers() {
+    return db.rows(
+        "SELECT u.MaNguoiDung AS id, u.HoVaTen AS name, u.SoDienThoai AS phone, "
+            + "COALESCE(CONCAT('Tuyến ', dc.PhuongXa, ', ', dc.TinhThanhPho), 'Tuyến Quận Hải Châu, Đà Nẵng') AS route "
+            + "FROM NguoiDung u "
+            + "JOIN NguoiDung_VaiTro nv ON nv.MaNguoiDung = u.MaNguoiDung "
+            + "JOIN VaiTro v ON v.MaVaiTro = nv.MaVaiTro "
+            + "LEFT JOIN SoDiaChi dc ON dc.MaNguoiDung = u.MaNguoiDung AND dc.LaMacDinh = 1 "
+            + "WHERE v.TenVaiTro = 'ROLE_STAFF_SHIPPER' AND u.TrangThaiHoatDong = 'HOAT_DONG' "
+            + "ORDER BY u.MaNguoiDung");
+  }
+
+  /** Chi tiết để in pick list/receipt; staff không được lấy đơn ngoài phạm vi. Cho phép tìm theo mã đơn hoặc mã SKU/Barcode. */
   @GetMapping("/staff/orders/{id}")
   @PreAuthorize("hasAnyRole('SHOP_ADMIN','STAFF_WAREHOUSE','STAFF_CASHIER','STAFF_SHIPPER')")
   public Map<String, Object> staffOrder(Authentication a, @PathVariable String id) {
-    var o = orders.detail(id);
+    String clean = id.trim().toUpperCase().replaceFirst("^#", "").replaceFirst("^YFS", "");
+    String target = clean;
+    if (clean.matches("^\\d+$")) {
+      target = String.format("DH%08d", Long.parseLong(clean));
+    }
+
+    var check = db.rows("SELECT MaDonHang FROM DonHang WHERE MaDonHang=?", target);
+    if (check.isEmpty()) {
+      var byEnd = db.rows("SELECT MaDonHang FROM DonHang WHERE MaDonHang LIKE ? ORDER BY NgayTao DESC LIMIT 1", "%" + clean);
+      if (!byEnd.isEmpty()) {
+        target = Db.text(byEnd.get(0), "MaDonHang");
+      } else {
+        var bySku = db.rows(
+            "SELECT d.MaDonHang FROM DonHang d "
+                + "JOIN ChiTietDonHang c ON c.MaDonHang = d.MaDonHang "
+                + "JOIN BienTheSanPham b ON b.MaBienThe = c.MaBienThe "
+                + "WHERE UPPER(b.MaQuanLyHangHoa) = ? OR UPPER(b.MaVach) = ? "
+                + "ORDER BY CASE WHEN d.TrangThaiDonHang IN ('TRA_HANG', 'DANG_GIAO_HANG', 'CHO_SHIPPER') THEN 1 ELSE 2 END, d.NgayTao DESC LIMIT 1",
+            clean, clean);
+        if (!bySku.isEmpty()) {
+          target = Db.text(bySku.get(0), "MaDonHang");
+        }
+      }
+    }
+
+    var o = orders.detail(target);
     Problem.require(
         has(a, "SHOP_ADMIN")
             || has(a, "STAFF_WAREHOUSE")
             || a.getName().equals(o.get("shipperId"))
             || db.count(
                     "SELECT COUNT(*) FROM DonHang WHERE MaDonHang=? AND MaThuNgan=?",
-                    id,
+                    target,
                     a.getName())
                 > 0,
         404,
         "NOT_FOUND",
         "Không có đơn trong phạm vi của bạn.");
+
+    o.put("id", target);
+    o.put("receiver", o.get("recipientName"));
+    o.put("phone", o.get("phone"));
+    o.put("address", o.get("address"));
+
+    var lines = db.rows(
+        "SELECT c.MaChiTietDonHang AS lineId, c.MaBienThe AS variantId, "
+            + "b.MaQuanLyHangHoa AS sku, b.MaQuanLyHangHoa AS barcode, "
+            + "c.TenSanPhamLucDatHang AS ten, c.TenSanPhamLucDatHang AS name, "
+            + "c.KichCoLucDatHang AS size, c.TenMauLucDatHang AS mau, c.TenMauLucDatHang AS colorName, "
+            + "c.SoLuong AS qty, c.SoLuong AS quantity, c.DonGiaLucDatHang AS unitPrice, "
+            + "b.ViTriGiaKe AS shelf "
+            + "FROM ChiTietDonHang c "
+            + "JOIN BienTheSanPham b ON b.MaBienThe = c.MaBienThe "
+            + "WHERE c.MaDonHang=? ORDER BY b.ViTriGiaKe, b.MaQuanLyHangHoa",
+        target);
+
+    for (var l : lines) {
+      l.put("shelf", parseShelf((String) l.get("shelf")));
+    }
+    o.put("lines", lines);
     return o;
   }
 
@@ -364,23 +503,129 @@ public class StaffController {
 
   /** Shipper xác nhận đã giao và thu COD; không dùng cho thanh toán VietQR. */
   @PostMapping("/staff/orders/{id}/deliver")
-  @PreAuthorize("hasRole('STAFF_SHIPPER')")
-  public Map<String, Object> deliver(@PathVariable String id, Authentication a) {
+  @PreAuthorize("hasAnyRole('SHOP_ADMIN','STAFF_SHIPPER')")
+  public Map<String, Object> deliver(
+      @PathVariable String id,
+      @RequestBody(required = false) Map<String, Object> body,
+      Authentication a) {
     return orders.transition(id, a.getName(), "deliver", null);
   }
 
-  /** Giao thất bại chuyển về kho chờ phân lại, chưa hoàn tồn khi hàng chưa về. */
+  /** Giao thất bại chuyển về kho chờ phân lại hoặc cập nhật số lần giao và lý do. */
   @PostMapping("/staff/orders/{id}/delivery-failed")
-  @PreAuthorize("hasRole('STAFF_SHIPPER')")
-  public Map<String, Object> failed(@PathVariable String id, Authentication a) {
-    return orders.transition(id, a.getName(), "failed", null);
+  @PreAuthorize("hasAnyRole('SHOP_ADMIN','STAFF_SHIPPER')")
+  public Map<String, Object> failed(
+      @PathVariable String id,
+      @RequestBody(required = false) Map<String, String> body,
+      Authentication a) {
+    String reason = body != null ? body.getOrDefault("reason", "KHONG_NGHE_MAY") : "KHONG_NGHE_MAY";
+    String note = body != null ? body.getOrDefault("note", "") : "";
+    return orders.deliveryFailed(id, a.getName(), reason, note);
   }
 
-  /** Kho xác nhận nhận lại hàng vật lý và hoàn tồn một lần. */
+  /** Kiện hàng đã đóng gói đang chờ bàn giao cho shipper tiếp nhận thêm. */
+  @GetMapping("/staff/shipper/pending-parcels")
+  @PreAuthorize("hasAnyRole('SHOP_ADMIN','STAFF_SHIPPER')")
+  public List<Map<String, Object>> pendingParcels() {
+    return db.rows(
+        "SELECT MaDonHang AS maDon, TenNguoiNhan AS khach, SoDienThoaiNhan AS sdt, "
+            + "DiaChiGiaoChiTiet AS diaChi, SoTienThuHo AS soTienThuHo, "
+            + "COALESCE(GhiChuDonHang, 'Cho xem hàng, không cho thử') AS ghiChu, "
+            + "SoLanGiao AS soLanGiao, 'DANG_GIAO_HANG' AS status "
+            + "FROM DonHang "
+            + "WHERE KenhBanHang='ONLINE_APP' AND TrangThaiDonHang IN ('DANG_DONG_GOI', 'CHO_XAC_NHAN') AND MaNguoiGiaoHang IS NULL "
+            + "ORDER BY NgayTao DESC LIMIT 50");
+  }
+
+  /** Shipper quét nhận thêm kiện hàng đóng gói vào lộ trình giao cá nhân. */
+  @PostMapping("/staff/orders/{id}/pickup")
+  @PreAuthorize("hasAnyRole('SHOP_ADMIN','STAFF_SHIPPER')")
+  public Map<String, Object> pickup(@PathVariable String id, Authentication a) {
+    var o = db.one("SELECT * FROM DonHang WHERE MaDonHang=? FOR UPDATE", id);
+    Problem.require(!o.isEmpty(), 404, "NOT_FOUND", "Không tìm thấy đơn hàng.");
+    String state = Db.text(o, "TrangThaiDonHang");
+    Problem.require(
+        Set.of("CHO_XAC_NHAN", "DANG_DONG_GOI").contains(state),
+        409,
+        "ORDER_STATE_INVALID",
+        "Đơn hàng không ở trạng thái chờ giao.");
+    db.exec(
+        "UPDATE DonHang SET MaNguoiGiaoHang=?, TrangThaiDonHang='DANG_GIAO_HANG', SoLanGiao=SoLanGiao+1 WHERE MaDonHang=?",
+        a.getName(),
+        id);
+    db.audit(a.getName(), "ORDER_SHIPPER_PICKUP", id);
+    return orders.detail(id);
+  }
+
+  /** Quyết toán ca giao hàng cuối ngày của shipper nộp tiền COD cho thu ngân. */
+  @PostMapping("/staff/shipper/settle")
+  @PreAuthorize("hasAnyRole('SHOP_ADMIN','STAFF_SHIPPER')")
+  public Map<String, Object> settle(Authentication a) {
+    db.audit(a.getName(), "SHIPPER_SETTLE", a.getName());
+    return Map.of("settled", true, "timestamp", java.time.Instant.now().toString());
+  }
+
+  /** Xác nhận đổi trả/nhận lại hàng tại quầy hoặc kho và hoàn tồn một lần hoặc chuyển kho lỗi. */
   @PostMapping("/staff/orders/{id}/receive-return")
+  @PreAuthorize("hasAnyRole('SHOP_ADMIN','STAFF_WAREHOUSE','STAFF_CASHIER')")
+  public Map<String, Object> returned(
+      @PathVariable String id,
+      @RequestParam(defaultValue = "true") boolean restock,
+      Authentication a) {
+    return orders.cancel(id, a.getName(), false, true, restock);
+  }
+
+  /** Danh mục kiểm kê theo dãy kệ thực tế trong kho từ bảng BienTheSanPham & SanPham. */
+  @GetMapping("/staff/inventory/audit-zones")
   @PreAuthorize("hasAnyRole('SHOP_ADMIN','STAFF_WAREHOUSE')")
-  public Map<String, Object> returned(@PathVariable String id, Authentication a) {
-    return orders.cancel(id, a.getName(), false, true);
+  public Map<String, Object> auditZones() {
+    var rows = db.rows(
+        "SELECT b.MaBienThe AS variantId, b.MaQuanLyHangHoa AS sku, p.TenSanPham AS ten, "
+            + "b.KichCo AS size, b.TenMau AS mau, b.SoLuongTonKho AS book, "
+            + "COALESCE(b.ViTriGiaKe, 'KHO-01') AS ke "
+            + "FROM BienTheSanPham b "
+            + "JOIN SanPham p ON p.MaSanPham = b.MaSanPham "
+            + "ORDER BY b.ViTriGiaKe, b.MaQuanLyHangHoa");
+
+    Map<String, List<Map<String, Object>>> grouped = new LinkedHashMap<>();
+    for (var r : rows) {
+      String ke = Db.text(r, "ke");
+      String zoneKey = "A";
+      var m = java.util.regex.Pattern.compile("(?:KE-)?([A-Z])").matcher(ke.toUpperCase(Locale.ROOT));
+      if (m.find() && m.group(1) != null) {
+        zoneKey = m.group(1);
+      }
+      grouped.computeIfAbsent(zoneKey, k -> new ArrayList<>()).add(r);
+    }
+
+    Map<String, Object> result = new LinkedHashMap<>();
+    for (var e : grouped.entrySet()) {
+      String key = e.getKey();
+      String label = switch (key) {
+        case "F" -> "DÃY KỆ F (THỜI TRANG NỮ / ÁO TOPS & VÁY)";
+        case "M" -> "DÃY KỆ M (THỜI TRANG NAM / SƠ MI & QUẦN)";
+        case "B" -> "DÃY KỆ B (QUẦN BOTTOMS)";
+        default -> "DÃY KỆ " + key + " (KHO HÀNG TRUNG TÂM)";
+      };
+      result.put(key, Map.of("label", label, "items", e.getValue()));
+    }
+    return result;
+  }
+
+  /** Báo cáo Xuất - Nhập - Tồn từ BienTheSanPham và BienDongKho. */
+  @GetMapping("/staff/inventory/summary")
+  @PreAuthorize("hasAnyRole('SHOP_ADMIN','STAFF_WAREHOUSE')")
+  public Map<String, Object> inventorySummary() {
+    long tonCuoi = db.count("SELECT COALESCE(SUM(SoLuongTonKho), 0) FROM BienTheSanPham");
+    long nhapMoi = db.count("SELECT COALESCE(SUM(SoLuongThayDoi), 0) FROM BienDongKho WHERE SoLuongThayDoi > 0");
+    long xuatBan = db.count("SELECT COALESCE(SUM(ABS(SoLuongThayDoi)), 0) FROM BienDongKho WHERE SoLuongThayDoi < 0");
+    long tonDau = Math.max(0, tonCuoi - nhapMoi + xuatBan);
+    if (tonDau == 0 && tonCuoi > 0) tonDau = tonCuoi;
+    return Map.of(
+        "tonDau", tonDau,
+        "nhapMoi", nhapMoi,
+        "xuatBan", xuatBan,
+        "tonCuoi", tonCuoi);
   }
 
   /** Admin hủy đơn chưa giao; không tự hoàn tiền khi chưa đối soát. */
@@ -588,6 +833,11 @@ public class StaffController {
     if (!updates.isEmpty()) {
       params.add(id);
       db.exec("UPDATE DonHang SET " + String.join(", ", updates) + " WHERE MaDonHang=?", params.toArray());
+      if ("HOAN_TAT".equals(b.status())) {
+        db.exec("UPDATE NguoiDung_KhuyenMai SET TrangThai='DA_DUNG' WHERE MaDonHangDaDung=?", id);
+      } else if ("DA_HUY".equals(b.status()) || "TRA_HANG".equals(b.status())) {
+        db.exec("UPDATE NguoiDung_KhuyenMai SET TrangThai='CHUA_DUNG', MaDonHangDaDung=NULL, NgaySuDung=NULL WHERE MaDonHangDaDung=?", id);
+      }
       db.audit(a.getName(), "ORDER_UPDATE", id);
     }
 

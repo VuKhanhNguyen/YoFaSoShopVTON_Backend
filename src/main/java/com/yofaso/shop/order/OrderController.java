@@ -45,7 +45,7 @@ public class OrderController {
                 + "b.KichCo AS size, b.MaQuanLyHangHoa AS sku, "
                 + "COALESCE(b.GiaKhuyenMai, b.GiaNiemYet) AS unitPrice, b.GiaNiemYet AS originalPrice, "
                 + "b.SoLuongTonKho AS stock, "
-                + "(SELECT h.MaHinhAnh FROM HinhAnhSanPham h WHERE h.MaSanPham = b.MaSanPham AND h.LaAnhDaiDien = 1 LIMIT 1) AS imageId "
+                + "(SELECT h.MaHinhAnh FROM HinhAnhSanPham h WHERE h.MaSanPham = b.MaSanPham AND (h.MaMauSac = b.MaMauSac OR h.LaAnhDaiDien = 1) ORDER BY (h.MaMauSac = b.MaMauSac) DESC, h.LaAnhDaiDien DESC, h.ThuTuHienThi ASC LIMIT 1) AS imageId "
                 + "FROM ChiTietGioHang c "
                 + "JOIN GioHang g ON g.MaGioHang = c.MaGioHang "
                 + "JOIN BienTheSanPham b ON b.MaBienThe = c.MaBienThe "

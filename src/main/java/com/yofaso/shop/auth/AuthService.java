@@ -1,14 +1,26 @@
 package com.yofaso.shop.auth;
 
-import com.yofaso.shop.common.*;
 import java.security.SecureRandom;
-import java.time.*;
-import java.util.*;
+import java.time.Instant;
+import java.util.Base64;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
-import org.springframework.security.oauth2.jwt.*;
+import org.springframework.security.oauth2.jwt.JwsHeader;
+import org.springframework.security.oauth2.jwt.JwtClaimsSet;
+import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import com.yofaso.shop.common.Db;
+import com.yofaso.shop.common.Idempotency;
+import com.yofaso.shop.common.Problem;
 
 /** Tài khoản thật trong MySQL, BCrypt, access JWT 15 phút và refresh xoay vòng. */
 @Service
@@ -55,7 +67,7 @@ public class AuthService {
         gender);
     Problem.require(db.exec("INSERT INTO NguoiDung_VaiTro(MaNguoiDung,MaVaiTro)"
         + " SELECT ?,MaVaiTro FROM VaiTro WHERE TenVaiTro='ROLE_CUSTOMER'", id) == 1,
-        503, "ROLE_CONFIG_INVALID", "Database chưa có vai trò khách hàng chuẩn.");
+        503, "ROLE_CONFIG_INVALID", "Hệ thống chưa thiết lập vai trò khách hàng chuẩn.");
     grantWelcomeVouchers(id);
     checkAndGrantBirthdayVoucher(id);
     return tokens(id);

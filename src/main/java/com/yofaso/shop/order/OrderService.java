@@ -28,7 +28,8 @@ public class OrderService {
           + " recipientName,SoDienThoaiNhan AS phone,DiaChiGiaoChiTiet AS address,TrangThaiDonHang"
           + " AS status,TrangThaiThanhToan AS paymentStatus,PhuongThucThanhToan AS"
           + " paymentMethod,TienGiamGia AS discount,PhiVanChuyen AS shippingFee,SoTienThuHo AS"
-          + " collectAmount,MaNguoiGiaoHang AS shipperId,NgayTao AS createdAt,"
+          + " collectAmount,MaNguoiGiaoHang AS shipperId,MaKhuyenMai AS promotionId,"
+          + " (SELECT MaPhieuGiamGia FROM KhuyenMai WHERE MaKhuyenMai=DonHang.MaKhuyenMai) AS voucherCode,NgayTao AS createdAt,"
           + " (SELECT COALESCE(SUM(c.SoLuong * c.DonGiaLucDatHang), 0) FROM ChiTietDonHang c WHERE c.MaDonHang=DonHang.MaDonHang) AS subtotal"
           + " FROM DonHang";
 
@@ -47,7 +48,7 @@ public class OrderService {
             "SELECT c.MaChiTietDonHang AS orderLineId,c.MaBienThe AS variantId,c.TenSanPhamLucDatHang AS"
                 + " productName,c.TenMauLucDatHang AS colorName,c.KichCoLucDatHang AS size,c.SoLuong AS"
                 + " quantity,c.DonGiaLucDatHang AS unitPrice,c.MaPhienThuDo AS sessionId,"
-                + "(SELECT h.MaHinhAnh FROM HinhAnhSanPham h JOIN BienTheSanPham b ON b.MaSanPham = h.MaSanPham WHERE b.MaBienThe = c.MaBienThe AND h.LaAnhDaiDien = 1 LIMIT 1) AS imageId FROM"
+                + "(SELECT h.MaHinhAnh FROM HinhAnhSanPham h JOIN BienTheSanPham b ON b.MaSanPham = h.MaSanPham WHERE b.MaBienThe = c.MaBienThe AND (h.MaMauSac = b.MaMauSac OR h.LaAnhDaiDien = 1) ORDER BY (h.MaMauSac = b.MaMauSac) DESC, h.LaAnhDaiDien DESC, h.ThuTuHienThi ASC LIMIT 1) AS imageId FROM"
                 + " ChiTietDonHang c WHERE c.MaDonHang=?",
             id);
     BigDecimal subtotal = BigDecimal.ZERO;
@@ -82,7 +83,7 @@ public class OrderService {
               "SELECT c.MaChiTietDonHang AS orderLineId,c.MaBienThe AS variantId,c.TenSanPhamLucDatHang AS"
                   + " productName,c.TenMauLucDatHang AS colorName,c.KichCoLucDatHang AS size,c.SoLuong AS"
                   + " quantity,c.DonGiaLucDatHang AS unitPrice,c.MaPhienThuDo AS sessionId,"
-                  + "(SELECT h.MaHinhAnh FROM HinhAnhSanPham h JOIN BienTheSanPham b ON b.MaSanPham = h.MaSanPham WHERE b.MaBienThe = c.MaBienThe AND h.LaAnhDaiDien = 1 LIMIT 1) AS imageId FROM"
+                  + "(SELECT h.MaHinhAnh FROM HinhAnhSanPham h JOIN BienTheSanPham b ON b.MaSanPham = h.MaSanPham WHERE b.MaBienThe = c.MaBienThe AND (h.MaMauSac = b.MaMauSac OR h.LaAnhDaiDien = 1) ORDER BY (h.MaMauSac = b.MaMauSac) DESC, h.LaAnhDaiDien DESC, h.ThuTuHienThi ASC LIMIT 1) AS imageId FROM"
                   + " ChiTietDonHang c WHERE c.MaDonHang=?",
               id);
       BigDecimal subtotal = BigDecimal.ZERO;
@@ -159,6 +160,12 @@ public class OrderService {
       snapshots.add(v);
       subtotal = subtotal.add(price.multiply(BigDecimal.valueOf(e.getValue())));
     }
+    if (b.voucher() != null && !b.voucher().isBlank() && customer != null) {
+      long usedInOtherOrder = db.count(
+          "SELECT COUNT(*) FROM DonHang WHERE MaNguoiDung=? AND MaKhuyenMai=(SELECT MaKhuyenMai FROM KhuyenMai WHERE MaPhieuGiamGia=?) AND TrangThaiDonHang NOT IN ('DA_HUY', 'TRA_HANG')",
+          customer, b.voucher().trim());
+      Problem.require(usedInOtherOrder == 0, 409, "VOUCHER_ALREADY_USED", "Bạn đã sử dụng mã voucher này trong một đơn hàng trước đó.");
+    }
     Map<String, Object> promo = discount(b.voucher(), subtotal, true);
     BigDecimal discount = (BigDecimal) promo.get("discount");
     BigDecimal total = subtotal.subtract(discount);
@@ -215,6 +222,15 @@ public class OrderService {
         pos ? "HOAN_TAT" : "CHO_XAC_NHAN",
         (pos || isVietQr) ? BigDecimal.ZERO : total,
         promo.get("promotionId"));
+    if (promo.get("promotionId") != null && customer != null) {
+      try {
+        db.exec(
+            "INSERT INTO NguoiDung_KhuyenMai (MaNguoiDung, MaKhuyenMai, NgayThuThap, TrangThai, NgaySuDung, MaDonHangDaDung) "
+                + "VALUES (?, ?, CURRENT_TIMESTAMP, 'CHUA_DUNG', CURRENT_TIMESTAMP, ?) "
+                + "ON DUPLICATE KEY UPDATE NgaySuDung=CURRENT_TIMESTAMP, MaDonHangDaDung=VALUES(MaDonHangDaDung)",
+            customer, promo.get("promotionId"), id);
+      } catch (Exception ignored) {}
+    }
     if (pos)
       db.exec("UPDATE DonHang SET ThoiGianThanhToan=CURRENT_TIMESTAMP WHERE MaDonHang=?", id);
     for (var v : snapshots) {
@@ -293,6 +309,13 @@ public class OrderService {
   /** Hủy/nhận hoàn chỉ hoàn tồn một lần vì trạng thái đơn được khóa. */
   @Transactional
   public Map<String, Object> cancel(String id, String actor, boolean customer, boolean returned) {
+    return cancel(id, actor, customer, returned, true);
+  }
+
+  /** Hủy/nhận hoàn có tùy chọn phục hồi tồn kho khả dụng hay phân loại hàng lỗi. */
+  @Transactional
+  public Map<String, Object> cancel(
+      String id, String actor, boolean customer, boolean returned, boolean restock) {
     var o = db.one("SELECT * FROM DonHang WHERE MaDonHang=? FOR UPDATE", id);
     String state = Db.text(o, "TrangThaiDonHang");
     String target = returned ? "TRA_HANG" : "DA_HUY";
@@ -308,24 +331,75 @@ public class OrderService {
         409,
         "ORDER_STATE_INVALID",
         "Không thể hủy/nhận hoàn ở trạng thái này.");
-    for (var line :
-        db.rows(
-            "SELECT MaBienThe,SoLuong FROM ChiTietDonHang WHERE MaDonHang=? ORDER BY MaBienThe",
-            id))
-      stock.move(
-          Db.text(line, "MaBienThe"),
-          ((Number) line.get("SoLuong")).intValue(),
-          "NHAP_KHO_HANG_HOAN",
-          id,
-          actor,
-          returned ? "Đã nhận hàng hoàn vật lý" : "Hủy giữ tồn");
+    if (restock) {
+      for (var line :
+          db.rows(
+              "SELECT MaBienThe,SoLuong FROM ChiTietDonHang WHERE MaDonHang=? ORDER BY MaBienThe",
+              id))
+        stock.move(
+            Db.text(line, "MaBienThe"),
+            ((Number) line.get("SoLuong")).intValue(),
+            "NHAP_KHO_HANG_HOAN",
+            id,
+            actor,
+            returned ? "Đã nhận hàng hoàn vật lý" : "Hủy giữ tồn");
+    } else {
+      for (var line :
+          db.rows(
+              "SELECT MaBienThe,SoLuong FROM ChiTietDonHang WHERE MaDonHang=? ORDER BY MaBienThe",
+              id))
+        db.exec(
+            "INSERT INTO BienDongKho(MaBienDong,MaBienThe,LoaiBienDong,SoLuongThayDoi,SoLuongTonTruoc,SoLuongTonSau,MaThamChieu,MaNhanVienThucHien,GhiChu)"
+                + " VALUES(?,?,?,?,?,?,?,?,?)",
+            Db.id("BDK"),
+            Db.text(line, "MaBienThe"),
+            "KIEM_KE_CAN_KHO",
+            0,
+            0,
+            0,
+            id,
+            actor,
+            "Hàng hoàn lỗi - chuyển kho chờ thanh lý");
+    }
     db.exec("UPDATE DonHang SET TrangThaiDonHang=?,SoTienThuHo=0 WHERE MaDonHang=?", target, id);
     if (o.get("MaKhuyenMai") != null)
       db.exec(
           "UPDATE KhuyenMai SET SoLuongDaDung=GREATEST(0,SoLuongDaDung-1) WHERE MaKhuyenMai=?",
           o.get("MaKhuyenMai"));
+    db.exec("UPDATE NguoiDung_KhuyenMai SET TrangThai='CHUA_DUNG', MaDonHangDaDung=NULL, NgaySuDung=NULL WHERE MaDonHangDaDung=?", id);
     // Hoàn hàng đã thanh toán vẫn cần đối soát tiền; không tự ghi DA_HOAN_TIEN.
     db.audit(actor, returned ? "ORDER_RETURN_RECEIVED" : "ORDER_CANCEL", id);
+    return detail(id);
+  }
+
+  /** Ghi nhận giao hàng thất bại, tăng số lần giao và tự động chuyển hoàn nếu đủ 3 lần hoặc khách từ chối. */
+  @Transactional
+  public Map<String, Object> deliveryFailed(String id, String actor, String reason, String note) {
+    var o = db.one("SELECT * FROM DonHang WHERE MaDonHang=? FOR UPDATE", id);
+    Problem.require(!o.isEmpty(), 404, "NOT_FOUND", "Không tìm thấy đơn hàng.");
+    String state = Db.text(o, "TrangThaiDonHang");
+    boolean isAdmin = db.count(
+        "SELECT COUNT(*) FROM NguoiDung_VaiTro nv JOIN VaiTro v ON v.MaVaiTro=nv.MaVaiTro WHERE nv.MaNguoiDung=? AND v.TenVaiTro='ROLE_SHOP_ADMIN'",
+        actor) > 0;
+    Problem.require(
+        (isAdmin || actor.equals(o.get("MaNguoiGiaoHang"))) && state.equals("DANG_GIAO_HANG"),
+        409,
+        "ORDER_STATE_INVALID",
+        "Không phải đơn bạn đang giao.");
+    int soLanGiao = ((Number) o.getOrDefault("SoLanGiao", 0)).intValue() + 1;
+    boolean shouldReturn = soLanGiao >= 3 || "TU_CHOI_NHAN".equals(reason);
+    String targetStatus = shouldReturn ? "TRA_HANG" : "DANG_GIAO_HANG";
+    String fullNote = (note != null && !note.isBlank()) ? note : reason;
+    db.exec(
+        "UPDATE DonHang SET TrangThaiDonHang=?, SoLanGiao=?, GhiChuDonHang=? WHERE MaDonHang=?",
+        targetStatus,
+        soLanGiao,
+        fullNote,
+        id);
+    db.audit(actor, "ORDER_DELIVERY_FAILED", id);
+    if (o.get("MaNguoiDung") != null) {
+      notice(Db.text(o, "MaNguoiDung"), id, "Đơn giao chưa thành công: " + fullNote);
+    }
     return detail(id);
   }
 
@@ -345,7 +419,7 @@ public class OrderService {
       }
       case "assign" -> {
         Problem.require(
-            state.equals("DANG_DONG_GOI"), 409, "ORDER_STATE_INVALID", "Đơn phải đang đóng gói.");
+            state.equals("DANG_DONG_GOI") || state.equals("CHO_XAC_NHAN"), 409, "ORDER_STATE_INVALID", "Đơn phải đang chờ xử lý hoặc đóng gói.");
         Problem.require(
             db.count(
                     "SELECT COUNT(*) FROM NguoiDung n JOIN NguoiDung_VaiTro r ON"
@@ -364,8 +438,11 @@ public class OrderService {
             id);
       }
       case "deliver" -> {
+        boolean isAdmin = db.count(
+            "SELECT COUNT(*) FROM NguoiDung_VaiTro nv JOIN VaiTro v ON v.MaVaiTro=nv.MaVaiTro WHERE nv.MaNguoiDung=? AND v.TenVaiTro='ROLE_SHOP_ADMIN'",
+            actor) > 0;
         Problem.require(
-            actor.equals(o.get("MaNguoiGiaoHang")) && state.equals("DANG_GIAO_HANG"),
+            (isAdmin || actor.equals(o.get("MaNguoiGiaoHang"))) && state.equals("DANG_GIAO_HANG"),
             409,
             "ORDER_STATE_INVALID",
             "Không phải đơn bạn đang giao.");
@@ -374,10 +451,14 @@ public class OrderService {
                 + " TrangThaiDonHang='HOAN_TAT',TrangThaiThanhToan='DA_THANH_TOAN',ThoiGianThanhToan=CURRENT_TIMESTAMP,SoTienThuHo=0"
                 + " WHERE MaDonHang=?",
             id);
+        db.exec("UPDATE NguoiDung_KhuyenMai SET TrangThai='DA_DUNG' WHERE MaDonHangDaDung=?", id);
       }
       case "failed" -> {
+        boolean isAdmin = db.count(
+            "SELECT COUNT(*) FROM NguoiDung_VaiTro nv JOIN VaiTro v ON v.MaVaiTro=nv.MaVaiTro WHERE nv.MaNguoiDung=? AND v.TenVaiTro='ROLE_SHOP_ADMIN'",
+            actor) > 0;
         Problem.require(
-            actor.equals(o.get("MaNguoiGiaoHang")) && state.equals("DANG_GIAO_HANG"),
+            (isAdmin || actor.equals(o.get("MaNguoiGiaoHang"))) && state.equals("DANG_GIAO_HANG"),
             409,
             "ORDER_STATE_INVALID",
             "Không phải đơn bạn đang giao.");

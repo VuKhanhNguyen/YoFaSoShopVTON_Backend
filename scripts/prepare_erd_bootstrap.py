@@ -2,7 +2,7 @@
 
 Không phát sinh DROP và không tắt foreign key. CREATE DATABASE không có IF EXISTS:
 chạy file bằng mysql batch không --force để dừng ngay nếu database đã tồn tại.
-Sau import, Backend chỉ kiểm tra 19 bảng/cột; không chạy Flyway hay ALTER.
+Sau import, Backend chỉ kiểm tra 20 bảng/cột; không chạy Flyway hay ALTER.
 """
 import argparse
 import re
@@ -52,8 +52,8 @@ def main():
     seed = statements((root / "yofaso_insert_data.sql").read_text(encoding="utf-8-sig"))
     ddl = [s for s in schema if re.match(r"CREATE TABLE |ALTER TABLE |CREATE (?:UNIQUE )?INDEX ", s, re.I)]
     inserts = [s for s in seed if re.match(r"INSERT INTO ", s, re.I)]
-    if len([s for s in ddl if s.upper().startswith("CREATE TABLE ")]) != 19 or len(inserts) != 19:
-        raise ValueError("Nguồn không còn đúng 19 bảng/19 nhóm INSERT; cần đối chiếu trước")
+    if len([s for s in ddl if s.upper().startswith("CREATE TABLE ")]) != 20 or len(inserts) != 20:
+        raise ValueError("Nguồn không còn đúng 20 bảng/20 nhóm INSERT; cần đối chiếu trước")
     output = f"-- Generated for NEW database only. Do not use mysql --force.\nCREATE DATABASE `{args.database}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\nUSE `{args.database}`;\n"
     output += "\n".join(ddl) + "\nSTART TRANSACTION;\n" + "\n".join(inserts) + "\nCOMMIT;\n"
     # Không overwrite artifact đã có để người dùng còn giữ bản đối chiếu trước.

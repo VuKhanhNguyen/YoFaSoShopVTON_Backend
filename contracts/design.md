@@ -1,4 +1,4 @@
-# Backend/AI contract — ERD cố định 19 bảng
+# Backend/AI contract — ERD cố định 20 bảng
 
 SQL nghiệp vụ đúng yofasoshop_db.sql; không tự DDL/Flyway/SQLite. Backend owns MySQL; AI nhận bytes/model jobs và không kết nối SQL. Manifest JSON trên volume riêng giữ token/idempotency/assets/operations/queue, khóa OS + ghi nguyên tử; một Backend và một host API/worker AI.
 

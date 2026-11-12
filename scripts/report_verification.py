@@ -32,7 +32,7 @@ text=f"""# Kết quả kiểm thử Backend — {local_date}
 
 - {len(cases)} request/assertion HTTP ghi nhận bởi suite. {len(covered)}/{operations} operation được gọi qua HTTP; **không có nghĩa mọi nhánh/thành công của mọi operation đã được cover**. Bộ đếm này thuộc suite chính; suite OTP riêng chưa gộp vào số HTTP operation ở đây. GPU thật chưa chạy.
 - Line coverage **{coverage['line']}%**, branch **{coverage['branch']}%**, instruction **{coverage['instruction']}%**. Dữ liệu lấy từ JaCoCo, không suy từ số endpoint.
-- MySQL **8.0.46 thật**, process riêng, data mới/port localhost random; khởi tạo đúng 19 bảng/cột từ db/schema.sql, không có Flyway history. Không đăng nhập/chỉnh sửa MySQL80 của người dùng.
+- MySQL **8.0.46 thật**, process riêng, data mới/port localhost random; khởi tạo đúng 20 bảng/cột từ db/schema.sql, không có Flyway history. Không đăng nhập/chỉnh sửa MySQL80 của người dùng.
 - Spring Boot 4.1.2, build target Java21; runtime test JDK{java_version}. Chưa nghiệm thu JDK/JRE21 runtime.
 - Suite HTTP Spring Boot kiểm tra quyền/ownership, đăng ký/BCrypt/refresh/password revocation, strict JSON/validation, catalog/SKU, voucher, snapshot giá, key trùng, hủy/hoàn tồn, tranh SKU cuối đồng thời, kho/shipper, POS/ca, review/notification, ảnh/consent và mock guard.
 - Suite FastAPI dùng Uvicorn + queue manifest/mock worker thật: multipart upload, validate person, submit/poll VTON và phân tích nhiều ảnh, download result/cutout/mask về storage Backend. Giữ simulated=true. Stub HTTP riêng kiểm tra backoff/mất kết nối/hủy và idempotency. Tất cả ảnh fixture là ảnh tổng hợp, không có ảnh khách thật.

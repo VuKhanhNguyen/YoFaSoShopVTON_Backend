@@ -27,8 +27,15 @@ public class OrderService {
       "SELECT MaDonHang AS orderId,MaNguoiDung AS userId,KenhBanHang AS channel,TenNguoiNhan AS"
           + " recipientName,SoDienThoaiNhan AS phone,DiaChiGiaoChiTiet AS address,TrangThaiDonHang"
           + " AS status,TrangThaiThanhToan AS paymentStatus,PhuongThucThanhToan AS"
-          + " paymentMethod,TienGiamGia AS discount,PhiVanChuyen AS shippingFee,SoTienThuHo AS"
+          + " paymentMethod,(PhuongThucThanhToan='VIETQR_CHUYEN_KHOAN_ONLINE'"
+          + " AND TrangThaiThanhToan='CHUA_THANH_TOAN'"
+          + " AND NgayTao <= CURRENT_TIMESTAMP - INTERVAL 15 MINUTE) AS paymentExpired,"
+          + " TienGiamGia AS discount,PhiVanChuyen AS shippingFee,SoTienThuHo AS"
           + " collectAmount,MaNguoiGiaoHang AS shipperId,MaKhuyenMai AS promotionId,"
+          + " (TrangThaiDonHang='TRA_HANG' AND NOT EXISTS (SELECT 1 FROM BienDongKho b"
+          + " WHERE b.MaThamChieu=DonHang.MaDonHang AND (b.LoaiBienDong='NHAP_KHO_HANG_HOAN'"
+          + " OR b.GhiChu='Hàng hoàn lỗi - chuyển kho chờ thanh lý')"
+          + " AND COALESCE(b.GhiChu,'') <> 'Hủy giữ tồn')) AS returnPending,"
           + " (SELECT MaPhieuGiamGia FROM KhuyenMai WHERE MaKhuyenMai=DonHang.MaKhuyenMai) AS voucherCode,NgayTao AS createdAt,"
           + " (SELECT COALESCE(SUM(c.SoLuong * c.DonGiaLucDatHang), 0) FROM ChiTietDonHang c WHERE c.MaDonHang=DonHang.MaDonHang) AS subtotal"
           + " FROM DonHang";
@@ -321,10 +328,13 @@ public class OrderService {
     String target = returned ? "TRA_HANG" : "DA_HUY";
     if (customer)
       Problem.require(actor.equals(o.get("MaNguoiDung")), 404, "NOT_FOUND", "Không có đơn hàng.");
-    if (state.equals(target)) return detail(id);
+    if (state.equals(target) && (!returned || db.count(
+        "SELECT COUNT(*) FROM BienDongKho WHERE MaThamChieu=? AND (LoaiBienDong='NHAP_KHO_HANG_HOAN'"
+            + " OR GhiChu='Hàng hoàn lỗi - chuyển kho chờ thanh lý')"
+            + " AND COALESCE(GhiChu,'') <> 'Hủy giữ tồn'", id) > 0)) return detail(id);
     Problem.require(
         returned
-            ? Set.of("DANG_GIAO_HANG", "HOAN_TAT").contains(state)
+            ? Set.of("TRA_HANG", "HOAN_TAT").contains(state)
             : (customer
                 ? state.equals("CHO_XAC_NHAN")
                 : Set.of("CHO_XAC_NHAN", "DANG_DONG_GOI").contains(state)),
@@ -348,15 +358,10 @@ public class OrderService {
           db.rows(
               "SELECT MaBienThe,SoLuong FROM ChiTietDonHang WHERE MaDonHang=? ORDER BY MaBienThe",
               id))
-        db.exec(
-            "INSERT INTO BienDongKho(MaBienDong,MaBienThe,LoaiBienDong,SoLuongThayDoi,SoLuongTonTruoc,SoLuongTonSau,MaThamChieu,MaNhanVienThucHien,GhiChu)"
-                + " VALUES(?,?,?,?,?,?,?,?,?)",
-            Db.id("BDK"),
+        stock.move(
             Db.text(line, "MaBienThe"),
-            "KIEM_KE_CAN_KHO",
             0,
-            0,
-            0,
+            "NHAP_KHO_HANG_HOAN",
             id,
             actor,
             "Hàng hoàn lỗi - chuyển kho chờ thanh lý");
@@ -386,14 +391,14 @@ public class OrderService {
         409,
         "ORDER_STATE_INVALID",
         "Không phải đơn bạn đang giao.");
-    int soLanGiao = ((Number) o.getOrDefault("SoLanGiao", 0)).intValue() + 1;
+    int soLanGiao = ((Number) o.getOrDefault("SoLanGiao", 0)).intValue();
     boolean shouldReturn = soLanGiao >= 3 || "TU_CHOI_NHAN".equals(reason);
     String targetStatus = shouldReturn ? "TRA_HANG" : "DANG_GIAO_HANG";
     String fullNote = (note != null && !note.isBlank()) ? note : reason;
     db.exec(
-        "UPDATE DonHang SET TrangThaiDonHang=?, SoLanGiao=?, GhiChuDonHang=? WHERE MaDonHang=?",
+        "UPDATE DonHang SET TrangThaiDonHang=?, SoLanGiao=SoLanGiao+?, GhiChuDonHang=? WHERE MaDonHang=?",
         targetStatus,
-        soLanGiao,
+        shouldReturn ? 0 : 1,
         fullNote,
         id);
     db.audit(actor, "ORDER_DELIVERY_FAILED", id);
@@ -410,6 +415,7 @@ public class OrderService {
     String state = Db.text(o, "TrangThaiDonHang");
     switch (action) {
       case "pack" -> {
+        requireReadyPayment(o);
         Problem.require(
             state.equals("CHO_XAC_NHAN"),
             409,
@@ -417,9 +423,11 @@ public class OrderService {
             "Đơn chưa ở trạng thái chờ xác nhận.");
         db.exec("UPDATE DonHang SET TrangThaiDonHang='DANG_DONG_GOI' WHERE MaDonHang=?", id);
       }
-      case "assign" -> {
+      case "assign", "pickup" -> {
+        requireReadyPayment(o);
         Problem.require(
-            state.equals("DANG_DONG_GOI") || state.equals("CHO_XAC_NHAN"), 409, "ORDER_STATE_INVALID", "Đơn phải đang chờ xử lý hoặc đóng gói.");
+            state.equals("DANG_DONG_GOI") && o.get("MaNguoiGiaoHang") == null,
+            409, "ORDER_STATE_INVALID", "Kiện hàng chưa sẵn sàng bàn giao.");
         Problem.require(
             db.count(
                     "SELECT COUNT(*) FROM NguoiDung n JOIN NguoiDung_VaiTro r ON"
@@ -436,6 +444,9 @@ public class OrderService {
                 + " MaDonHang=?",
             shipper,
             id);
+        for (var line : db.rows(
+            "SELECT MaBienThe FROM ChiTietDonHang WHERE MaDonHang=? ORDER BY MaBienThe", id))
+          stock.move(Db.text(line, "MaBienThe"), 0, "XUAT_KHO_GIAO_HANG", id, actor, "Bàn giao kiện hàng");
       }
       case "deliver" -> {
         boolean isAdmin = db.count(
@@ -448,7 +459,7 @@ public class OrderService {
             "Không phải đơn bạn đang giao.");
         db.exec(
             "UPDATE DonHang SET"
-                + " TrangThaiDonHang='HOAN_TAT',TrangThaiThanhToan='DA_THANH_TOAN',ThoiGianThanhToan=CURRENT_TIMESTAMP,SoTienThuHo=0"
+                + " TrangThaiDonHang='HOAN_TAT',TrangThaiThanhToan='DA_THANH_TOAN',ThoiGianThanhToan=COALESCE(ThoiGianThanhToan,CURRENT_TIMESTAMP),SoTienThuHo=0"
                 + " WHERE MaDonHang=?",
             id);
         db.exec("UPDATE NguoiDung_KhuyenMai SET TrangThai='DA_DUNG' WHERE MaDonHangDaDung=?", id);
@@ -475,16 +486,41 @@ public class OrderService {
     return detail(id);
   }
 
-  /**  khoản VietQR thành công, cập nhật trạng thái thanh toán và mã giao dịch. */
+  private void requireReadyPayment(Map<String, Object> order) {
+    Problem.require("ONLINE_APP".equals(order.get("KenhBanHang"))
+        && (!"VIETQR_CHUYEN_KHOAN_ONLINE".equals(order.get("PhuongThucThanhToan"))
+            || "DA_THANH_TOAN".equals(order.get("TrangThaiThanhToan"))),
+        409, "ORDER_NOT_READY", "Đơn online chưa đủ điều kiện xử lý kho.");
+  }
+
+  @Transactional
+  public void expirePayment(String id) {
+    var o = db.one("SELECT * FROM DonHang WHERE MaDonHang=? FOR UPDATE", id);
+    if (o.get("MaDonHang") != null
+        && db.count("SELECT COUNT(*) FROM DonHang WHERE MaDonHang=? AND " + EXPIRED_PAYMENT, id) == 1)
+      cancel(id, null, false, false);
+  }
+
+  static final String EXPIRED_PAYMENT =
+      "KenhBanHang='ONLINE_APP' AND PhuongThucThanhToan='VIETQR_CHUYEN_KHOAN_ONLINE'"
+          + " AND TrangThaiDonHang='CHO_XAC_NHAN' AND TrangThaiThanhToan='CHUA_THANH_TOAN'"
+          + " AND NgayTao <= CURRENT_TIMESTAMP - INTERVAL 15 MINUTE";
+
+  /** Chủ shop xác nhận sau khi đối soát giao dịch thực nhận. */
   @Transactional
   public Map<String, Object> markPaidOnline(String id, String transactionRef) {
     var o = db.one("SELECT * FROM DonHang WHERE MaDonHang=? FOR UPDATE", id);
     Problem.require(
-        "VIETQR_CHUYEN_KHOAN_ONLINE".equals(o.get("PhuongThucThanhToan"))
-            || "VIETQR_TAI_QUAY".equals(o.get("PhuongThucThanhToan")),
+        "VIETQR_CHUYEN_KHOAN_ONLINE".equals(o.get("PhuongThucThanhToan")),
         400,
         "PAYMENT_METHOD_INVALID",
         "Đơn hàng này không dùng phương thức VietQR.");
+    Problem.require("CHO_XAC_NHAN".equals(o.get("TrangThaiDonHang"))
+        && db.count("SELECT COUNT(*) FROM DonHang WHERE MaDonHang=?"
+            + " AND NgayTao > CURRENT_TIMESTAMP - INTERVAL 15 MINUTE", id) == 1,
+        409, "PAYMENT_EXPIRED", "Đơn đã hết hạn hoặc đã đóng. Hãy đối soát khoản tiền đến muộn.");
+    Problem.require(db.count("SELECT COUNT(*) FROM DonHang WHERE MaGiaoDichNgoai=?", transactionRef) == 0,
+        409, "PAYMENT_REFERENCE_USED", "Mã giao dịch này đã được sử dụng.");
     Problem.require(
         "CHUA_THANH_TOAN".equals(o.get("TrangThaiThanhToan")),
         409,

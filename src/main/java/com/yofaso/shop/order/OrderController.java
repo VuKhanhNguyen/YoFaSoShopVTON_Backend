@@ -134,17 +134,6 @@ public class OrderController {
     return orders.detail(id);
   }
 
-  /** Khách xác nhận đã chuyển khoản VietQR thành công hoặc webhook gọi vào. */
-  @PostMapping("/orders/{id}/confirm-payment")
-  public Map<String, Object> confirmPayment(
-      Authentication a,
-      @PathVariable String id,
-      @RequestBody(required = false) Map<String, String> body) {
-    orders.own(id, a.getName());
-    String ref = body != null ? body.get("transactionRef") : null;
-    return orders.markPaidOnline(id, ref != null ? ref : "VQR-" + System.currentTimeMillis());
-  }
-
   /** Khách chỉ hủy trước khi đóng gói, hoàn tồn nguyên tử. */
   @PostMapping("/orders/{id}/cancel")
   public Map<String, Object> cancel(Authentication a, @PathVariable String id) {

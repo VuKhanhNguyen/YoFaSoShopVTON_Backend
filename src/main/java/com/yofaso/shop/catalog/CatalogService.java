@@ -165,7 +165,10 @@ public class CatalogService {
           ? (int) Math.round((1.0 - minP.doubleValue() / origP.doubleValue()) * 100)
           : 0;
       item.put("discountPercent", discountPercent);
-      item.put("coverUrl", covers.get(id));
+      String cover = covers.get(id);
+      item.put("coverUrl", cover);
+      if (staff && cover != null)
+        item.put("adminCoverUrl", cover.replace("/catalog/images/", "/admin/products/" + id + "/images/"));
       item.put("sku", skus.getOrDefault(id, id));
       Number avgR = (Number) ratings.get(id);
       item.put("avgRating", avgR != null ? avgR.doubleValue() : 0.0);
@@ -267,10 +270,9 @@ public class CatalogService {
           id,
           b.categoryId(),
           b.name());
-    String targetStatus = (b.status() != null && !b.status().isBlank()) ? b.status() : "BAN_NHAP";
     db.exec(
         "UPDATE SanPham SET"
-            + " MaDanhMuc=?,TenSanPham=?,MoTaChiTiet=?,ChatLieu=?,KieuDang=?,LoaiCapQuan=?,ChieuDaiTrangPhuc=?,LoaiHoaTiet=?,PhanLoaiVTON=?,TieuLoaiTrangPhuc=?,TrangThaiSanPham=?"
+            + " MaDanhMuc=?,TenSanPham=?,MoTaChiTiet=?,ChatLieu=?,KieuDang=?,LoaiCapQuan=?,ChieuDaiTrangPhuc=?,LoaiHoaTiet=?,PhanLoaiVTON=?,TieuLoaiTrangPhuc=?"
             + (b.extractedPalette() != null ? ",BangMauTrichXuat=?" : "")
             + " WHERE MaSanPham=?",
         b.extractedPalette() != null
@@ -285,7 +287,6 @@ public class CatalogService {
                 b.pattern(),
                 b.vtonCategory(),
                 b.subtype(),
-                targetStatus,
                 b.extractedPalette(),
                 id
               }
@@ -300,7 +301,6 @@ public class CatalogService {
                 b.pattern(),
                 b.vtonCategory(),
                 b.subtype(),
-                targetStatus,
                 id
               });
     db.audit(actor, create ? "PRODUCT_CREATE" : "PRODUCT_UPDATE", id);
@@ -325,36 +325,6 @@ public class CatalogService {
     return detail(id, true);
   }
 
-  private String buildProductStorageCode(String productId, String productName, String categoryId) {
-    if (productName == null || productName.isBlank()) return productId.toLowerCase();
-    String prefix = "u-";
-    try {
-      var cat = db.one("SELECT MaDanhMuc, MaDanhMucCha FROM DanhMuc WHERE MaDanhMuc=?", categoryId);
-      String parent = Db.text(cat, "MaDanhMucCha");
-      if ("DM000001".equals(categoryId) || "DM000001".equals(parent)) {
-        prefix = "m-";
-      } else if ("DM000002".equals(categoryId) || "DM000002".equals(parent)) {
-        prefix = "w-";
-      } else if (parent != null && !parent.isBlank()) {
-        var root = db.one("SELECT MaDanhMucCha FROM DanhMuc WHERE MaDanhMuc=?", parent);
-        String rootParent = Db.text(root, "MaDanhMucCha");
-        if ("DM000001".equals(rootParent) || "DM000001".equals(parent)) {
-          prefix = "m-";
-        } else if ("DM000002".equals(rootParent) || "DM000002".equals(parent)) {
-          prefix = "w-";
-        }
-      }
-    } catch (Exception ignored) {}
-
-    String normalized = java.text.Normalizer.normalize(productName, java.text.Normalizer.Form.NFD)
-        .replaceAll("\\p{M}", "")
-        .replaceAll("[đĐ]", "d")
-        .replaceAll("[^a-zA-Z0-9]+", "-")
-        .replaceAll("^-+|-+$", "");
-    if (normalized.length() > 50) normalized = normalized.substring(0, 50);
-    return prefix + normalized;
-  }
-
   /** Đồng bộ ảnh sản phẩm theo nhóm màu, tải lên Cloudflare R2 public & private theo chuẩn thiết kế. */
   @Transactional
   public List<Map<String, Object>> saveImages(
@@ -367,35 +337,33 @@ public class CatalogService {
           productId);
     }
 
-    var pRow = db.one("SELECT TenSanPham, MaDanhMuc FROM SanPham WHERE MaSanPham=?", productId);
-    String productStorageCode = buildProductStorageCode(productId, Db.text(pRow, "TenSanPham"), Db.text(pRow, "MaDanhMuc"));
+    String productStorageCode = productId.toLowerCase(Locale.ROOT);
 
     // Đồng bộ Mask nếu có maskAssetId
     if (body.maskAssetId() != null && !body.maskAssetId().isBlank()) {
       String maskAsset = body.maskAssetId();
       if (maskAsset.matches("[a-f0-9-]{32,36}")) {
-        try {
-          String r2Mask = media.publishCatalog(productStorageCode, 1, "mask", maskAsset);
-          db.exec("UPDATE SanPham SET DuongDanMatNaVungThayDo=? WHERE MaSanPham=?", r2Mask, productId);
-        } catch (Exception e) {
-          db.exec("UPDATE SanPham SET DuongDanMatNaVungThayDo=? WHERE MaSanPham=?", "media/assets/" + maskAsset + ".png", productId);
-        }
-      } else if (maskAsset.startsWith("catalog-processing/")) {
-        db.exec("UPDATE SanPham SET DuongDanMatNaVungThayDo=? WHERE MaSanPham=?", maskAsset, productId);
+        var mask = media.owned(maskAsset, actor);
+        Problem.require("mask".equals(mask.get("RoleName")) && !Boolean.TRUE.equals(mask.get("Simulated")),
+            422, "MASK_INVALID", "Cần mask từ kết quả AI thật.");
+        String r2Mask = media.publishCatalog(productStorageCode + "-" + maskAsset, 1, "mask", maskAsset);
+        db.exec("UPDATE SanPham SET DuongDanMatNaVungThayDo=? WHERE MaSanPham=?", r2Mask, productId);
+      } else {
+        var product = db.one("SELECT DuongDanMatNaVungThayDo FROM SanPham WHERE MaSanPham=?", productId);
+        Problem.require(maskAsset.equals(product.get("DuongDanMatNaVungThayDo")),
+            422, "MASK_INVALID", "Mask không thuộc sản phẩm.");
       }
     }
 
     var existingRows = db.rows(
-        "SELECT MaHinhAnh,DuongDanAnhGoc FROM HinhAnhSanPham WHERE MaSanPham=?", productId);
+        "SELECT MaHinhAnh,DuongDanAnhGoc,DuongDanAnhBocNen FROM HinhAnhSanPham WHERE MaSanPham=?", productId);
     Set<String> keepIds = new HashSet<>();
 
     int refIdx = 0;
     int garmentIdx = 0;
 
     for (var item : body.images()) {
-      boolean isRef = "reference".equalsIgnoreCase(item.role())
-          || (item.assetId() != null && item.assetId().contains("--ref"))
-          || (item.position() <= 2 && (item.cutoutAssetId() == null || item.cutoutAssetId().isBlank()) && item.cover());
+      boolean isRef = "reference".equalsIgnoreCase(item.role()) || item.assetId().contains("--ref");
 
       if (isRef) {
         refIdx++;
@@ -407,35 +375,30 @@ public class CatalogService {
       String finalOriginal = item.assetId();
       String finalCutout = item.cutoutAssetId();
 
+      var existing = existingRows.stream().filter(row -> Objects.equals(row.get("MaHinhAnh"), item.imageId())).findFirst();
+      Problem.require(item.imageId() == null || existing.isPresent(), 422, "IMAGE_INVALID", "Ảnh không thuộc sản phẩm.");
+      Problem.require(finalOriginal.matches("[a-f0-9-]{32,36}")
+              || existing.filter(row -> item.assetId().equals(row.get("DuongDanAnhGoc"))).isPresent(),
+          422, "IMAGE_INVALID", "Hãy tải ảnh lên trước khi lưu.");
+      Problem.require(finalCutout == null || finalCutout.matches("[a-f0-9-]{32,36}")
+              || existing.filter(row -> Objects.equals(item.cutoutAssetId(), row.get("DuongDanAnhBocNen"))).isPresent(),
+          422, "CUTOUT_INVALID", "Ảnh bóc nền không thuộc sản phẩm.");
+
       // Nếu assetId là file tạm local (UUID), tải lên Cloudflare R2
-      if (item.assetId() != null && item.assetId().matches("[a-f0-9-]{32,36}")) {
-        try {
-          if (isRef) {
-            // Ảnh người mẫu: 1 bản public làm original/bìa FE, 1 bản private làm reference cho AI VTON
-            finalOriginal = media.publishCatalog(productStorageCode, filePos, "reference_original", item.assetId());
-            media.publishCatalog(productStorageCode, filePos, "reference", item.assetId());
-          } else {
-            // Ảnh trang phục: public original
-            finalOriginal = media.publishCatalog(productStorageCode, filePos, "original", item.assetId());
-          }
-        } catch (Exception ignored) {}
+      if (finalOriginal.matches("[a-f0-9-]{32,36}")) {
+        var source = media.owned(finalOriginal, actor);
+        Problem.require((isRef ? "reference" : "garment").equals(source.get("RoleName")),
+            422, "ASSET_ROLE_INVALID", "Ảnh không đúng loại dùng cho sản phẩm.");
+        String storageCode = productStorageCode + "-" + finalOriginal;
+        if (isRef) media.publishCatalog(storageCode, 1, "reference", finalOriginal);
+        finalOriginal = media.publishCatalog(storageCode, 1,
+            isRef ? "reference_original" : "original", finalOriginal);
       }
-
-      // Nếu cutoutAssetId là file tạm local (UUID), tải lên Cloudflare R2 public
       if (finalCutout != null && finalCutout.matches("[a-f0-9-]{32,36}")) {
-        try {
-          finalCutout = media.publishCatalog(productStorageCode, filePos, "cutout", finalCutout);
-        } catch (Exception ignored) {}
-      }
-
-      // Mask riêng của từng trang phục (nếu có)
-      if (!isRef && item.maskAssetId() != null && item.maskAssetId().matches("[a-f0-9-]{32,36}")) {
-        try {
-          String r2Mask = media.publishCatalog(productStorageCode, filePos, "mask", item.maskAssetId());
-          if (filePos == 1) {
-            db.exec("UPDATE SanPham SET DuongDanMatNaVungThayDo=? WHERE MaSanPham=?", r2Mask, productId);
-          }
-        } catch (Exception ignored) {}
+        var cutout = media.owned(finalCutout, actor);
+        Problem.require("cutout".equals(cutout.get("RoleName")) && !Boolean.TRUE.equals(cutout.get("Simulated")),
+            422, "CUTOUT_INVALID", "Cần ảnh bóc nền từ kết quả AI thật.");
+        finalCutout = media.publishCatalog(productStorageCode + "-" + finalCutout, 1, "cutout", finalCutout);
       }
 
       String imgId = item.imageId();
@@ -481,17 +444,19 @@ public class CatalogService {
   /** Công bố chỉ khi có SKU, ảnh sạch đúng SKU và metadata do nhân viên duyệt. */
   @Transactional
   public Map<String, Object> publish(String id, String actor) {
-    db.one("SELECT MaSanPham FROM SanPham WHERE MaSanPham=? FOR UPDATE", id);
-    long variants = db.count("SELECT COUNT(*) FROM BienTheSanPham WHERE MaSanPham=?", id);
+    var product = db.one("SELECT TrangThaiSanPham FROM SanPham WHERE MaSanPham=? FOR UPDATE", id);
+    Problem.require(!"DANG_XU_LY_AI".equals(product.get("TrangThaiSanPham")),
+        409, "ANALYSIS_ACTIVE", "Chờ phân tích AI hoàn tất trước khi công bố.");
+    long variants = db.count("SELECT COUNT(*) FROM BienTheSanPham WHERE MaSanPham=? AND TrangThai<>'NGUNG_BAN'", id);
     long ready =
         db.count(
-            "SELECT COUNT(DISTINCT b.MaBienThe) FROM BienTheSanPham b JOIN SanPham p ON p.MaSanPham=b.MaSanPham JOIN HinhAnhSanPham h ON h.MaSanPham=b.MaSanPham AND h.MaMauSac=b.MaMauSac WHERE b.MaSanPham=? AND h.DuongDanAnhBocNen LIKE 'catalog/products/%' AND (p.DuongDanMatNaVungThayDo LIKE 'catalog-processing/products/%' OR p.DuongDanMatNaVungThayDo LIKE 'catalog/products/%')",
+            "SELECT COUNT(DISTINCT b.MaBienThe) FROM BienTheSanPham b JOIN SanPham p ON p.MaSanPham=b.MaSanPham JOIN HinhAnhSanPham h ON h.MaSanPham=b.MaSanPham AND h.MaMauSac=b.MaMauSac WHERE b.MaSanPham=? AND b.TrangThai<>'NGUNG_BAN' AND b.GiaNiemYet>0 AND h.DuongDanAnhBocNen LIKE 'catalog/products/%' AND (p.DuongDanMatNaVungThayDo LIKE 'catalog-processing/products/%' OR p.DuongDanMatNaVungThayDo LIKE 'catalog/products/%')",
             id);
     Problem.require(
         variants > 0 && ready == variants,
         409,
         "CATALOG_NOT_READY",
-        "Mỗi SKU cần ảnh bóc nền, mask và metadata đã duyệt từ dữ liệu thật.");
+        "Cần ít nhất một SKU chưa ngừng bán. Mỗi SKU đó phải có giá dương, ảnh bóc nền và mask.");
     db.exec("UPDATE SanPham SET TrangThaiSanPham='DANG_KINH_DOANH' WHERE MaSanPham=?", id);
     db.audit(actor, "PRODUCT_PUBLISH", id);
     return detail(id, true);
@@ -499,7 +464,7 @@ public class CatalogService {
 
   /** SKU mới tồn ban đầu mặc định 0; nếu Admin nhập stock thì ghi nhận qua ledger kho. */
   public String variant(String product, String id, CatalogController.Variant b, String actor) {
-    db.one("SELECT MaSanPham FROM SanPham WHERE MaSanPham=?", product);
+    db.one("SELECT MaSanPham FROM SanPham WHERE MaSanPham=? FOR UPDATE", product);
     Problem.require(
         b.salePrice() == null || b.salePrice().compareTo(b.price()) <= 0,
         422,
@@ -554,10 +519,11 @@ public class CatalogService {
   /** Xóa SKU chưa phát sinh giao dịch hoặc chuyển NGUNG_BAN để bảo toàn lịch sử. */
   @Transactional
   public Map<String, Object> deleteVariant(String product, String variantId, String actor) {
-    db.one(
-        "SELECT MaBienThe FROM BienTheSanPham WHERE MaBienThe=? AND MaSanPham=? FOR UPDATE",
-        variantId,
-        product);
+    db.one("SELECT MaSanPham FROM SanPham WHERE MaSanPham=? FOR UPDATE", product);
+    if (db.rows("SELECT MaBienThe FROM BienTheSanPham WHERE MaBienThe=? AND MaSanPham=? FOR UPDATE",
+        variantId, product).isEmpty()) {
+      return Map.of("deleted", false, "discontinued", false);
+    }
     long refs =
         db.count("SELECT COUNT(*) FROM ChiTietDonHang WHERE MaBienThe=?", variantId)
             + db.count("SELECT COUNT(*) FROM PhienThuDoAo WHERE MaBienThe=?", variantId)

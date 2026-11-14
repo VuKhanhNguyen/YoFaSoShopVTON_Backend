@@ -160,6 +160,12 @@ public class MediaService {
   public Map<String, Object> segmentGarment(
       String owner, String garmentAssetId, String referenceAssetId, String category, String subtype) {
     try {
+      Problem.require("garment".equals(owned(garmentAssetId, owner).get("RoleName")),
+          422, "ASSET_ROLE_INVALID", "Cần ảnh trang phục.");
+      if (referenceAssetId != null && !referenceAssetId.isBlank()) {
+        Problem.require("reference".equals(owned(referenceAssetId, owner).get("RoleName")),
+            422, "ASSET_ROLE_INVALID", "Cần ảnh người mẫu.");
+      }
       String remoteGarment = remote(garmentAssetId);
       String remoteRef = (referenceAssetId != null && !referenceAssetId.isBlank()) ? remote(referenceAssetId) : null;
       var remoteRes = ai.segmentGarmentRealtime(remoteGarment, remoteRef, category, subtype);
@@ -387,8 +393,9 @@ public class MediaService {
             : String.format("--img%02d--v01--%s.png", position, role);
     String key = prefix + product + fileCode;
     byte[] data = bytes(asset);
+    String uploaded = r2.upload(key, data);
     saveToCache(key, data);
-    return r2.upload(key, data);
+    return uploaded;
   }
 
   /** Chỉ xóa ảnh riêng chưa được tham chiếu; lỗi I/O không xóa bản ghi để còn thử lại. */

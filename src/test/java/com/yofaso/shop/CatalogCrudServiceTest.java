@@ -53,8 +53,8 @@ class CatalogCrudServiceTest {
     var media = mock(MediaService.class);
     var service = new CatalogService(db, inventory, media);
 
-    when(db.one(contains("FROM BienTheSanPham"), eq("BT00000001"), eq("SP00000001")))
-        .thenReturn(Map.of("MaBienThe", "BT00000001"));
+    when(db.rows(contains("FROM BienTheSanPham"), eq("BT00000001"), eq("SP00000001")))
+        .thenReturn(List.of(Map.of("MaBienThe", "BT00000001")));
     when(db.count(contains("ChiTietDonHang"), eq("BT00000001"))).thenReturn(1L);
     when(db.count(contains("PhienThuDoAo"), eq("BT00000001"))).thenReturn(0L);
     when(db.count(contains("GoiYPhoiDo"), eq("BT00000001"))).thenReturn(0L);

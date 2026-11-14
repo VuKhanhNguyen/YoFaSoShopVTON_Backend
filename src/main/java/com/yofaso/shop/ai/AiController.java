@@ -277,6 +277,12 @@ public class AiController {
     return service.analyze(a.getName(), key, id, b);
   }
 
+  @GetMapping("/admin/products/{id}/analysis")
+  @PreAuthorize("hasRole('SHOP_ADMIN')")
+  public Map<String, Object> latestAnalysis(Authentication a, @PathVariable String id) {
+    return service.latestAnalysis(id, a.getName());
+  }
+
   /** Bóc tách nền và tạo Agnostic Mask realtime từ GPU cho một ảnh trang phục. */
   @PostMapping("/admin/ai/segment-garment")
   @PreAuthorize("hasRole('SHOP_ADMIN')")
@@ -319,6 +325,9 @@ public class AiController {
     var result = (Map<String, Object>) op.get("result");
     String product = op.get("resourceId").toString();
     db.one("SELECT MaSanPham FROM SanPham WHERE MaSanPham=? FOR UPDATE", product);
+    var latest = service.latestAnalysis(product, a.getName());
+    Problem.require(id.equals(latest.get("operationId")), 409, "ANALYSIS_STALE",
+        "Hãy duyệt kết quả phân tích gần nhất.");
     Set<String> variants = new HashSet<>();
     for (var bind : b.bindings()) {
       Problem.require(
@@ -350,8 +359,16 @@ public class AiController {
       boolean isCover = refCoverCount == 0 && position == 0;
       long maxPosition = db.count("SELECT COALESCE(MAX(ThuTuHienThi), 0) FROM HinhAnhSanPham WHERE MaSanPham=?", product);
       int finalPos = (int) (maxPosition + position + 1);
-      if (existing.isEmpty()) db.exec("INSERT INTO HinhAnhSanPham(MaHinhAnh,MaSanPham,DuongDanAnhGoc,DuongDanAnhBocNen,MaMauSac,LaAnhDaiDien,ThuTuHienThi) VALUES(?,?,?,?,?,?,?)",
-          Db.id("HA"),product,original,cutout,sku.get("MaMauSac"),isCover,finalPos);
+      String uploadedSource = "catalog/products/" + product.toLowerCase(Locale.ROOT) + "-" + bind.sourceAssetId() + "/";
+      if (!existing.isEmpty()) {
+        db.exec("UPDATE HinhAnhSanPham SET DuongDanAnhBocNen=? WHERE MaSanPham=? AND DuongDanAnhGoc=?",
+            cutout, product, original);
+      } else {
+        int updated = db.exec("UPDATE HinhAnhSanPham SET DuongDanAnhBocNen=? WHERE MaSanPham=? AND MaMauSac=? AND DuongDanAnhGoc LIKE ?",
+            cutout, product, sku.get("MaMauSac"), uploadedSource + "%");
+        if (updated == 0) db.exec("INSERT INTO HinhAnhSanPham(MaHinhAnh,MaSanPham,DuongDanAnhGoc,DuongDanAnhBocNen,MaMauSac,LaAnhDaiDien,ThuTuHienThi) VALUES(?,?,?,?,?,?,?)",
+            Db.id("HA"),product,original,cutout,sku.get("MaMauSac"),isCover,finalPos);
+      }
     }
     var analyzed=(List<Map<String,Object>>)result.get("variants");
     String representative=Objects.toString(analyzed.getFirst().get("maskKey"),"");
@@ -360,7 +377,7 @@ public class AiController {
     String subtype=Objects.toString(analyzed.getFirst().get("category"),"");
     Problem.require(!subtype.isBlank() && subtype.length()<=50,502,"AI_RESPONSE_INVALID","Thiếu subtype hợp lệ.");
     var palette=analyzed.stream().map(v -> RuntimeState.row("sourceAssetId",v.get("sourceAssetId"),"colors",v.get("colors"))).toList();
-    db.exec("UPDATE SanPham SET PhanLoaiVTON=?,TieuLoaiTrangPhuc=?,BangMauTrichXuat=?,DuongDanMatNaVungThayDo=?,TrangThaiSanPham='BAN_NHAP' WHERE MaSanPham=?",
+    db.exec("UPDATE SanPham SET PhanLoaiVTON=?,TieuLoaiTrangPhuc=?,BangMauTrichXuat=?,DuongDanMatNaVungThayDo=? WHERE MaSanPham=?",
         result.get("vtonCategory"),subtype,json.writeValueAsString(palette),representative,product);
     db.audit(a.getName(), "ANALYSIS_APPROVE", id);
     return Map.of("approved", true, "published", false);

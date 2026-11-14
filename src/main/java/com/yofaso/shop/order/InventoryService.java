@@ -30,7 +30,8 @@ public class InventoryService {
     int before = ((Number) row.get("SoLuongTonKho")).intValue();
     long after = (long) before + delta;
     Problem.require(
-        delta != 0 && after >= 0 && after <= 1000000000,
+        (delta != 0 || "XUAT_KHO_GIAO_HANG".equals(type) || "NHAP_KHO_HANG_HOAN".equals(type))
+            && after >= 0 && after <= 1000000000,
         409,
         "STOCK_INSUFFICIENT",
         "Tồn kho không đủ hoặc số lượng điều chỉnh không hợp lệ.");

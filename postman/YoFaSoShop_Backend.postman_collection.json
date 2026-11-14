@@ -142,6 +142,79 @@
       "name": "admin",
       "item": [
         {
+          "name": "POST /api/v1/admin/ai/segment-garment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{backendBaseUrl}}/api/v1/admin/ai/segment-garment",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "ai",
+                "segment-garment"
+              ]
+            },
+            "description": "Bóc tách nền và tạo Agnostic Mask realtime từ GPU cho một ảnh trang phục.\nQuyền: hasRole('SHOP_ADMIN')",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"garmentAssetId\": \"test\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300 && pm.response.headers.get(\"Content-Type\")?.includes(\"json\")) {",
+                  "  const d = pm.response.json();",
+                  "  if(d.requestId && pm.request.url.toString().includes(\"forgot-password\"))pm.environment.set(\"resetRequestId\",d.requestId);",
+                  "  if(d.categoryId) pm.environment.set(\"categoryId\",d.categoryId);",
+                  "  if(d.productId) pm.environment.set(\"productId\",d.productId);",
+                  "  if(d.variantId) pm.environment.set(\"variantId\",d.variantId);",
+                  "  if(d.addressId) pm.environment.set(\"addressId\",d.addressId);",
+                  "  if(d.orderId) pm.environment.set(\"orderId\",d.orderId);",
+                  "  if(d.shiftId) pm.environment.set(\"shiftId\",d.shiftId);",
+                  "  if(d.reviewId) pm.environment.set(\"reviewId\",d.reviewId);",
+                  "  if(d.promotionId) pm.environment.set(\"promotionId\",d.promotionId);",
+                  "  if(Array.isArray(d)&&d[0]?.recommendationId)pm.environment.set(\"recommendationId\",d[0].recommendationId);",
+                  "  if(d.operationId) pm.environment.set(d.kind === \"PRODUCT_ANALYSIS\" ? \"analysisId\" : \"sessionId\", d.operationId);",
+                  "  if(d.assetId){ pm.environment.set(\"assetId\",d.assetId); pm.environment.set(d.role === \"person\" ? \"personAssetId\" : \"garmentAssetId\",d.assetId); }",
+                  "  if(d.userId && !d.user) pm.environment.set(\"targetUserId\",d.userId);",
+                  "  if(d.items?.[0]?.orderLineId) pm.environment.set(\"orderLineId\",d.items[0].orderLineId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "GET /api/v1/admin/analyses/{id}",
           "request": {
             "method": "GET",
@@ -243,6 +316,76 @@
                   "language": "json"
                 }
               }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300 && pm.response.headers.get(\"Content-Type\")?.includes(\"json\")) {",
+                  "  const d = pm.response.json();",
+                  "  if(d.requestId && pm.request.url.toString().includes(\"forgot-password\"))pm.environment.set(\"resetRequestId\",d.requestId);",
+                  "  if(d.categoryId) pm.environment.set(\"categoryId\",d.categoryId);",
+                  "  if(d.productId) pm.environment.set(\"productId\",d.productId);",
+                  "  if(d.variantId) pm.environment.set(\"variantId\",d.variantId);",
+                  "  if(d.addressId) pm.environment.set(\"addressId\",d.addressId);",
+                  "  if(d.orderId) pm.environment.set(\"orderId\",d.orderId);",
+                  "  if(d.shiftId) pm.environment.set(\"shiftId\",d.shiftId);",
+                  "  if(d.reviewId) pm.environment.set(\"reviewId\",d.reviewId);",
+                  "  if(d.promotionId) pm.environment.set(\"promotionId\",d.promotionId);",
+                  "  if(Array.isArray(d)&&d[0]?.recommendationId)pm.environment.set(\"recommendationId\",d[0].recommendationId);",
+                  "  if(d.operationId) pm.environment.set(d.kind === \"PRODUCT_ANALYSIS\" ? \"analysisId\" : \"sessionId\", d.operationId);",
+                  "  if(d.assetId){ pm.environment.set(\"assetId\",d.assetId); pm.environment.set(d.role === \"person\" ? \"personAssetId\" : \"garmentAssetId\",d.assetId); }",
+                  "  if(d.userId && !d.user) pm.environment.set(\"targetUserId\",d.userId);",
+                  "  if(d.items?.[0]?.orderLineId) pm.environment.set(\"orderLineId\",d.items[0].orderLineId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/admin/audit-logs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{backendBaseUrl}}/api/v1/admin/audit-logs",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "audit-logs"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "100",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Nhật ký kiểm toán hành vi trọng yếu toàn hệ thống từ các bảng CSDL MySQL (BienDongKho, CaLamViecThuNgan, DonHang).\nQuyền: hasRole('SHOP_ADMIN')",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
@@ -406,6 +549,150 @@
           ]
         },
         {
+          "name": "GET /api/v1/admin/inventory/movements",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{backendBaseUrl}}/api/v1/admin/inventory/movements",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "inventory",
+                "movements"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "50",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Danh sách biến động kho toàn hệ thống cho chủ shop kiểm tra và đối soát.\nQuyền: hasRole('SHOP_ADMIN')",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300 && pm.response.headers.get(\"Content-Type\")?.includes(\"json\")) {",
+                  "  const d = pm.response.json();",
+                  "  if(d.requestId && pm.request.url.toString().includes(\"forgot-password\"))pm.environment.set(\"resetRequestId\",d.requestId);",
+                  "  if(d.categoryId) pm.environment.set(\"categoryId\",d.categoryId);",
+                  "  if(d.productId) pm.environment.set(\"productId\",d.productId);",
+                  "  if(d.variantId) pm.environment.set(\"variantId\",d.variantId);",
+                  "  if(d.addressId) pm.environment.set(\"addressId\",d.addressId);",
+                  "  if(d.orderId) pm.environment.set(\"orderId\",d.orderId);",
+                  "  if(d.shiftId) pm.environment.set(\"shiftId\",d.shiftId);",
+                  "  if(d.reviewId) pm.environment.set(\"reviewId\",d.reviewId);",
+                  "  if(d.promotionId) pm.environment.set(\"promotionId\",d.promotionId);",
+                  "  if(Array.isArray(d)&&d[0]?.recommendationId)pm.environment.set(\"recommendationId\",d[0].recommendationId);",
+                  "  if(d.operationId) pm.environment.set(d.kind === \"PRODUCT_ANALYSIS\" ? \"analysisId\" : \"sessionId\", d.operationId);",
+                  "  if(d.assetId){ pm.environment.set(\"assetId\",d.assetId); pm.environment.set(d.role === \"person\" ? \"personAssetId\" : \"garmentAssetId\",d.assetId); }",
+                  "  if(d.userId && !d.user) pm.environment.set(\"targetUserId\",d.userId);",
+                  "  if(d.items?.[0]?.orderLineId) pm.environment.set(\"orderLineId\",d.items[0].orderLineId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH /api/v1/admin/orders/{id}",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{backendBaseUrl}}/api/v1/admin/orders/{{orderId}}",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "orders",
+                "{{orderId}}"
+              ]
+            },
+            "description": "Cập nhật thông tin giao hàng/người nhận/ghi chú đơn hàng cho admin.\nQuyền: hasRole('SHOP_ADMIN')",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300 && pm.response.headers.get(\"Content-Type\")?.includes(\"json\")) {",
+                  "  const d = pm.response.json();",
+                  "  if(d.requestId && pm.request.url.toString().includes(\"forgot-password\"))pm.environment.set(\"resetRequestId\",d.requestId);",
+                  "  if(d.categoryId) pm.environment.set(\"categoryId\",d.categoryId);",
+                  "  if(d.productId) pm.environment.set(\"productId\",d.productId);",
+                  "  if(d.variantId) pm.environment.set(\"variantId\",d.variantId);",
+                  "  if(d.addressId) pm.environment.set(\"addressId\",d.addressId);",
+                  "  if(d.orderId) pm.environment.set(\"orderId\",d.orderId);",
+                  "  if(d.shiftId) pm.environment.set(\"shiftId\",d.shiftId);",
+                  "  if(d.reviewId) pm.environment.set(\"reviewId\",d.reviewId);",
+                  "  if(d.promotionId) pm.environment.set(\"promotionId\",d.promotionId);",
+                  "  if(Array.isArray(d)&&d[0]?.recommendationId)pm.environment.set(\"recommendationId\",d[0].recommendationId);",
+                  "  if(d.operationId) pm.environment.set(d.kind === \"PRODUCT_ANALYSIS\" ? \"analysisId\" : \"sessionId\", d.operationId);",
+                  "  if(d.assetId){ pm.environment.set(\"assetId\",d.assetId); pm.environment.set(d.role === \"person\" ? \"personAssetId\" : \"garmentAssetId\",d.assetId); }",
+                  "  if(d.userId && !d.user) pm.environment.set(\"targetUserId\",d.userId);",
+                  "  if(d.items?.[0]?.orderLineId) pm.environment.set(\"orderLineId\",d.items[0].orderLineId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "POST /api/v1/admin/orders/{id}/cancel",
           "request": {
             "method": "POST",
@@ -434,6 +721,80 @@
                   "type": "string"
                 }
               ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300 && pm.response.headers.get(\"Content-Type\")?.includes(\"json\")) {",
+                  "  const d = pm.response.json();",
+                  "  if(d.requestId && pm.request.url.toString().includes(\"forgot-password\"))pm.environment.set(\"resetRequestId\",d.requestId);",
+                  "  if(d.categoryId) pm.environment.set(\"categoryId\",d.categoryId);",
+                  "  if(d.productId) pm.environment.set(\"productId\",d.productId);",
+                  "  if(d.variantId) pm.environment.set(\"variantId\",d.variantId);",
+                  "  if(d.addressId) pm.environment.set(\"addressId\",d.addressId);",
+                  "  if(d.orderId) pm.environment.set(\"orderId\",d.orderId);",
+                  "  if(d.shiftId) pm.environment.set(\"shiftId\",d.shiftId);",
+                  "  if(d.reviewId) pm.environment.set(\"reviewId\",d.reviewId);",
+                  "  if(d.promotionId) pm.environment.set(\"promotionId\",d.promotionId);",
+                  "  if(Array.isArray(d)&&d[0]?.recommendationId)pm.environment.set(\"recommendationId\",d[0].recommendationId);",
+                  "  if(d.operationId) pm.environment.set(d.kind === \"PRODUCT_ANALYSIS\" ? \"analysisId\" : \"sessionId\", d.operationId);",
+                  "  if(d.assetId){ pm.environment.set(\"assetId\",d.assetId); pm.environment.set(d.role === \"person\" ? \"personAssetId\" : \"garmentAssetId\",d.assetId); }",
+                  "  if(d.userId && !d.user) pm.environment.set(\"targetUserId\",d.userId);",
+                  "  if(d.items?.[0]?.orderLineId) pm.environment.set(\"orderLineId\",d.items[0].orderLineId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/v1/admin/orders/{id}/confirm-payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{backendBaseUrl}}/api/v1/admin/orders/{{orderId}}/confirm-payment",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "orders",
+                "{{orderId}}",
+                "confirm-payment"
+              ]
+            },
+            "description": "StaffController: confirmPayment\nQuyền: hasRole('SHOP_ADMIN')",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transactionRef\": \"test\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
@@ -575,6 +936,10 @@
           "request": {
             "method": "POST",
             "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              },
               {
                 "key": "Content-Type",
                 "value": "application/json"
@@ -783,7 +1148,7 @@
                 "{{productId}}"
               ]
             },
-            "description": "Sửa metadata sẽ đưa sản phẩm về nháp để duyệt lại.\nQuyền: hasRole('SHOP_ADMIN')",
+            "description": "Sửa metadata và giữ trạng thái bán hiện tại.\nQuyền: hasRole('SHOP_ADMIN')",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -802,6 +1167,66 @@
                   "language": "json"
                 }
               }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300 && pm.response.headers.get(\"Content-Type\")?.includes(\"json\")) {",
+                  "  const d = pm.response.json();",
+                  "  if(d.requestId && pm.request.url.toString().includes(\"forgot-password\"))pm.environment.set(\"resetRequestId\",d.requestId);",
+                  "  if(d.categoryId) pm.environment.set(\"categoryId\",d.categoryId);",
+                  "  if(d.productId) pm.environment.set(\"productId\",d.productId);",
+                  "  if(d.variantId) pm.environment.set(\"variantId\",d.variantId);",
+                  "  if(d.addressId) pm.environment.set(\"addressId\",d.addressId);",
+                  "  if(d.orderId) pm.environment.set(\"orderId\",d.orderId);",
+                  "  if(d.shiftId) pm.environment.set(\"shiftId\",d.shiftId);",
+                  "  if(d.reviewId) pm.environment.set(\"reviewId\",d.reviewId);",
+                  "  if(d.promotionId) pm.environment.set(\"promotionId\",d.promotionId);",
+                  "  if(Array.isArray(d)&&d[0]?.recommendationId)pm.environment.set(\"recommendationId\",d[0].recommendationId);",
+                  "  if(d.operationId) pm.environment.set(d.kind === \"PRODUCT_ANALYSIS\" ? \"analysisId\" : \"sessionId\", d.operationId);",
+                  "  if(d.assetId){ pm.environment.set(\"assetId\",d.assetId); pm.environment.set(d.role === \"person\" ? \"personAssetId\" : \"garmentAssetId\",d.assetId); }",
+                  "  if(d.userId && !d.user) pm.environment.set(\"targetUserId\",d.userId);",
+                  "  if(d.items?.[0]?.orderLineId) pm.environment.set(\"orderLineId\",d.items[0].orderLineId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/admin/products/{id}/analysis",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{backendBaseUrl}}/api/v1/admin/products/{{productId}}/analysis",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "products",
+                "{{productId}}",
+                "analysis"
+              ]
+            },
+            "description": "AiController: latestAnalysis\nQuyền: hasRole('SHOP_ADMIN')",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
@@ -912,6 +1337,80 @@
           ]
         },
         {
+          "name": "POST /api/v1/admin/products/{id}/images",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{backendBaseUrl}}/api/v1/admin/products/{{productId}}/images",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "products",
+                "{{productId}}",
+                "images"
+              ]
+            },
+            "description": "Lưu đồng bộ danh sách ảnh theo màu và bảng màu trích xuất K-Means.\nQuyền: hasRole('SHOP_ADMIN')",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"images\": [\n    {\n      \"assetId\": \"{{personAssetId}}\",\n      \"colors\": \"#FFFFFF\",\n      \"cover\": true,\n      \"position\": 0\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300 && pm.response.headers.get(\"Content-Type\")?.includes(\"json\")) {",
+                  "  const d = pm.response.json();",
+                  "  if(d.requestId && pm.request.url.toString().includes(\"forgot-password\"))pm.environment.set(\"resetRequestId\",d.requestId);",
+                  "  if(d.categoryId) pm.environment.set(\"categoryId\",d.categoryId);",
+                  "  if(d.productId) pm.environment.set(\"productId\",d.productId);",
+                  "  if(d.variantId) pm.environment.set(\"variantId\",d.variantId);",
+                  "  if(d.addressId) pm.environment.set(\"addressId\",d.addressId);",
+                  "  if(d.orderId) pm.environment.set(\"orderId\",d.orderId);",
+                  "  if(d.shiftId) pm.environment.set(\"shiftId\",d.shiftId);",
+                  "  if(d.reviewId) pm.environment.set(\"reviewId\",d.reviewId);",
+                  "  if(d.promotionId) pm.environment.set(\"promotionId\",d.promotionId);",
+                  "  if(Array.isArray(d)&&d[0]?.recommendationId)pm.environment.set(\"recommendationId\",d[0].recommendationId);",
+                  "  if(d.operationId) pm.environment.set(d.kind === \"PRODUCT_ANALYSIS\" ? \"analysisId\" : \"sessionId\", d.operationId);",
+                  "  if(d.assetId){ pm.environment.set(\"assetId\",d.assetId); pm.environment.set(d.role === \"person\" ? \"personAssetId\" : \"garmentAssetId\",d.assetId); }",
+                  "  if(d.userId && !d.user) pm.environment.set(\"targetUserId\",d.userId);",
+                  "  if(d.items?.[0]?.orderLineId) pm.environment.set(\"orderLineId\",d.items[0].orderLineId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "POST /api/v1/admin/products/{id}/publish",
           "request": {
             "method": "POST",
@@ -976,6 +1475,10 @@
           "request": {
             "method": "POST",
             "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              },
               {
                 "key": "Content-Type",
                 "value": "application/json"
@@ -1046,6 +1549,67 @@
           ]
         },
         {
+          "name": "DELETE /api/v1/admin/products/{id}/variants/{variantId}",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{backendBaseUrl}}/api/v1/admin/products/{{productId}}/variants/{{variantId}}",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "products",
+                "{{productId}}",
+                "variants",
+                "{{variantId}}"
+              ]
+            },
+            "description": "Xóa SKU chưa có lịch sử giao dịch hoặc chuyển NGUNG_BAN.\nQuyền: hasRole('SHOP_ADMIN')",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300 && pm.response.headers.get(\"Content-Type\")?.includes(\"json\")) {",
+                  "  const d = pm.response.json();",
+                  "  if(d.requestId && pm.request.url.toString().includes(\"forgot-password\"))pm.environment.set(\"resetRequestId\",d.requestId);",
+                  "  if(d.categoryId) pm.environment.set(\"categoryId\",d.categoryId);",
+                  "  if(d.productId) pm.environment.set(\"productId\",d.productId);",
+                  "  if(d.variantId) pm.environment.set(\"variantId\",d.variantId);",
+                  "  if(d.addressId) pm.environment.set(\"addressId\",d.addressId);",
+                  "  if(d.orderId) pm.environment.set(\"orderId\",d.orderId);",
+                  "  if(d.shiftId) pm.environment.set(\"shiftId\",d.shiftId);",
+                  "  if(d.reviewId) pm.environment.set(\"reviewId\",d.reviewId);",
+                  "  if(d.promotionId) pm.environment.set(\"promotionId\",d.promotionId);",
+                  "  if(Array.isArray(d)&&d[0]?.recommendationId)pm.environment.set(\"recommendationId\",d[0].recommendationId);",
+                  "  if(d.operationId) pm.environment.set(d.kind === \"PRODUCT_ANALYSIS\" ? \"analysisId\" : \"sessionId\", d.operationId);",
+                  "  if(d.assetId){ pm.environment.set(\"assetId\",d.assetId); pm.environment.set(d.role === \"person\" ? \"personAssetId\" : \"garmentAssetId\",d.assetId); }",
+                  "  if(d.userId && !d.user) pm.environment.set(\"targetUserId\",d.userId);",
+                  "  if(d.items?.[0]?.orderLineId) pm.environment.set(\"orderLineId\",d.items[0].orderLineId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "PUT /api/v1/admin/products/{id}/variants/{variantId}",
           "request": {
             "method": "PUT",
@@ -1070,7 +1634,7 @@
                 "{{variantId}}"
               ]
             },
-            "description": "Sửa giá/màu/size SKU, không cho sửa trực tiếp tồn kho.\nQuyền: hasRole('SHOP_ADMIN')",
+            "description": "Sửa giá/màu/size/tồn SKU.\nQuyền: hasRole('SHOP_ADMIN')",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -1089,6 +1653,268 @@
                   "language": "json"
                 }
               }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300 && pm.response.headers.get(\"Content-Type\")?.includes(\"json\")) {",
+                  "  const d = pm.response.json();",
+                  "  if(d.requestId && pm.request.url.toString().includes(\"forgot-password\"))pm.environment.set(\"resetRequestId\",d.requestId);",
+                  "  if(d.categoryId) pm.environment.set(\"categoryId\",d.categoryId);",
+                  "  if(d.productId) pm.environment.set(\"productId\",d.productId);",
+                  "  if(d.variantId) pm.environment.set(\"variantId\",d.variantId);",
+                  "  if(d.addressId) pm.environment.set(\"addressId\",d.addressId);",
+                  "  if(d.orderId) pm.environment.set(\"orderId\",d.orderId);",
+                  "  if(d.shiftId) pm.environment.set(\"shiftId\",d.shiftId);",
+                  "  if(d.reviewId) pm.environment.set(\"reviewId\",d.reviewId);",
+                  "  if(d.promotionId) pm.environment.set(\"promotionId\",d.promotionId);",
+                  "  if(Array.isArray(d)&&d[0]?.recommendationId)pm.environment.set(\"recommendationId\",d[0].recommendationId);",
+                  "  if(d.operationId) pm.environment.set(d.kind === \"PRODUCT_ANALYSIS\" ? \"analysisId\" : \"sessionId\", d.operationId);",
+                  "  if(d.assetId){ pm.environment.set(\"assetId\",d.assetId); pm.environment.set(d.role === \"person\" ? \"personAssetId\" : \"garmentAssetId\",d.assetId); }",
+                  "  if(d.userId && !d.user) pm.environment.set(\"targetUserId\",d.userId);",
+                  "  if(d.items?.[0]?.orderLineId) pm.environment.set(\"orderLineId\",d.items[0].orderLineId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH /api/v1/admin/products/{id}/vton",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{backendBaseUrl}}/api/v1/admin/products/{{productId}}/vton",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "products",
+                "{{productId}}",
+                "vton"
+              ]
+            },
+            "description": "Cập nhật nhanh phân loại VTON và tiểu loại DeepFashion2 từ AI Inspector.\nQuyền: hasRole('SHOP_ADMIN')",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vtonCategory\": \"upper_body\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300 && pm.response.headers.get(\"Content-Type\")?.includes(\"json\")) {",
+                  "  const d = pm.response.json();",
+                  "  if(d.requestId && pm.request.url.toString().includes(\"forgot-password\"))pm.environment.set(\"resetRequestId\",d.requestId);",
+                  "  if(d.categoryId) pm.environment.set(\"categoryId\",d.categoryId);",
+                  "  if(d.productId) pm.environment.set(\"productId\",d.productId);",
+                  "  if(d.variantId) pm.environment.set(\"variantId\",d.variantId);",
+                  "  if(d.addressId) pm.environment.set(\"addressId\",d.addressId);",
+                  "  if(d.orderId) pm.environment.set(\"orderId\",d.orderId);",
+                  "  if(d.shiftId) pm.environment.set(\"shiftId\",d.shiftId);",
+                  "  if(d.reviewId) pm.environment.set(\"reviewId\",d.reviewId);",
+                  "  if(d.promotionId) pm.environment.set(\"promotionId\",d.promotionId);",
+                  "  if(Array.isArray(d)&&d[0]?.recommendationId)pm.environment.set(\"recommendationId\",d[0].recommendationId);",
+                  "  if(d.operationId) pm.environment.set(d.kind === \"PRODUCT_ANALYSIS\" ? \"analysisId\" : \"sessionId\", d.operationId);",
+                  "  if(d.assetId){ pm.environment.set(\"assetId\",d.assetId); pm.environment.set(d.role === \"person\" ? \"personAssetId\" : \"garmentAssetId\",d.assetId); }",
+                  "  if(d.userId && !d.user) pm.environment.set(\"targetUserId\",d.userId);",
+                  "  if(d.items?.[0]?.orderLineId) pm.environment.set(\"orderLineId\",d.items[0].orderLineId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/admin/products/{productId}/images/{imageId}/content",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{backendBaseUrl}}/api/v1/admin/products/{{productId}}/images/{{imageId}}/content",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "products",
+                "{{productId}}",
+                "images",
+                "{{imageId}}",
+                "content"
+              ],
+              "query": [
+                {
+                  "key": "kind",
+                  "value": "original",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Ảnh sản phẩm ở mọi trạng thái (kể cả bản nháp) dành cho Shop Admin xem & kiểm duyệt.\nQuyền: hasRole('SHOP_ADMIN')",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300 && pm.response.headers.get(\"Content-Type\")?.includes(\"json\")) {",
+                  "  const d = pm.response.json();",
+                  "  if(d.requestId && pm.request.url.toString().includes(\"forgot-password\"))pm.environment.set(\"resetRequestId\",d.requestId);",
+                  "  if(d.categoryId) pm.environment.set(\"categoryId\",d.categoryId);",
+                  "  if(d.productId) pm.environment.set(\"productId\",d.productId);",
+                  "  if(d.variantId) pm.environment.set(\"variantId\",d.variantId);",
+                  "  if(d.addressId) pm.environment.set(\"addressId\",d.addressId);",
+                  "  if(d.orderId) pm.environment.set(\"orderId\",d.orderId);",
+                  "  if(d.shiftId) pm.environment.set(\"shiftId\",d.shiftId);",
+                  "  if(d.reviewId) pm.environment.set(\"reviewId\",d.reviewId);",
+                  "  if(d.promotionId) pm.environment.set(\"promotionId\",d.promotionId);",
+                  "  if(Array.isArray(d)&&d[0]?.recommendationId)pm.environment.set(\"recommendationId\",d[0].recommendationId);",
+                  "  if(d.operationId) pm.environment.set(d.kind === \"PRODUCT_ANALYSIS\" ? \"analysisId\" : \"sessionId\", d.operationId);",
+                  "  if(d.assetId){ pm.environment.set(\"assetId\",d.assetId); pm.environment.set(d.role === \"person\" ? \"personAssetId\" : \"garmentAssetId\",d.assetId); }",
+                  "  if(d.userId && !d.user) pm.environment.set(\"targetUserId\",d.userId);",
+                  "  if(d.items?.[0]?.orderLineId) pm.environment.set(\"orderLineId\",d.items[0].orderLineId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/admin/products/{productId}/mask/content",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{backendBaseUrl}}/api/v1/admin/products/{{productId}}/mask/content",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "products",
+                "{{productId}}",
+                "mask",
+                "content"
+              ]
+            },
+            "description": "Ảnh Agnostic Mask của sản phẩm dành cho Shop Admin kiểm tra qua AI Inspector.\nQuyền: hasRole('SHOP_ADMIN')",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300 && pm.response.headers.get(\"Content-Type\")?.includes(\"json\")) {",
+                  "  const d = pm.response.json();",
+                  "  if(d.requestId && pm.request.url.toString().includes(\"forgot-password\"))pm.environment.set(\"resetRequestId\",d.requestId);",
+                  "  if(d.categoryId) pm.environment.set(\"categoryId\",d.categoryId);",
+                  "  if(d.productId) pm.environment.set(\"productId\",d.productId);",
+                  "  if(d.variantId) pm.environment.set(\"variantId\",d.variantId);",
+                  "  if(d.addressId) pm.environment.set(\"addressId\",d.addressId);",
+                  "  if(d.orderId) pm.environment.set(\"orderId\",d.orderId);",
+                  "  if(d.shiftId) pm.environment.set(\"shiftId\",d.shiftId);",
+                  "  if(d.reviewId) pm.environment.set(\"reviewId\",d.reviewId);",
+                  "  if(d.promotionId) pm.environment.set(\"promotionId\",d.promotionId);",
+                  "  if(Array.isArray(d)&&d[0]?.recommendationId)pm.environment.set(\"recommendationId\",d[0].recommendationId);",
+                  "  if(d.operationId) pm.environment.set(d.kind === \"PRODUCT_ANALYSIS\" ? \"analysisId\" : \"sessionId\", d.operationId);",
+                  "  if(d.assetId){ pm.environment.set(\"assetId\",d.assetId); pm.environment.set(d.role === \"person\" ? \"personAssetId\" : \"garmentAssetId\",d.assetId); }",
+                  "  if(d.userId && !d.user) pm.environment.set(\"targetUserId\",d.userId);",
+                  "  if(d.items?.[0]?.orderLineId) pm.environment.set(\"orderLineId\",d.items[0].orderLineId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/admin/promotions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{backendBaseUrl}}/api/v1/admin/promotions",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "promotions"
+              ]
+            },
+            "description": "Danh sách toàn bộ chương trình khuyến mãi cho chủ shop quản lý đa kênh.\nQuyền: hasRole('SHOP_ADMIN')",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
@@ -1252,6 +2078,65 @@
           ]
         },
         {
+          "name": "GET /api/v1/admin/reports/finance",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{backendBaseUrl}}/api/v1/admin/reports/finance",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "reports",
+                "finance"
+              ]
+            },
+            "description": "Thống kê doanh thu theo ngày và kênh bán hàng từ bảng DonHang.\nQuyền: hasRole('SHOP_ADMIN')",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300 && pm.response.headers.get(\"Content-Type\")?.includes(\"json\")) {",
+                  "  const d = pm.response.json();",
+                  "  if(d.requestId && pm.request.url.toString().includes(\"forgot-password\"))pm.environment.set(\"resetRequestId\",d.requestId);",
+                  "  if(d.categoryId) pm.environment.set(\"categoryId\",d.categoryId);",
+                  "  if(d.productId) pm.environment.set(\"productId\",d.productId);",
+                  "  if(d.variantId) pm.environment.set(\"variantId\",d.variantId);",
+                  "  if(d.addressId) pm.environment.set(\"addressId\",d.addressId);",
+                  "  if(d.orderId) pm.environment.set(\"orderId\",d.orderId);",
+                  "  if(d.shiftId) pm.environment.set(\"shiftId\",d.shiftId);",
+                  "  if(d.reviewId) pm.environment.set(\"reviewId\",d.reviewId);",
+                  "  if(d.promotionId) pm.environment.set(\"promotionId\",d.promotionId);",
+                  "  if(Array.isArray(d)&&d[0]?.recommendationId)pm.environment.set(\"recommendationId\",d[0].recommendationId);",
+                  "  if(d.operationId) pm.environment.set(d.kind === \"PRODUCT_ANALYSIS\" ? \"analysisId\" : \"sessionId\", d.operationId);",
+                  "  if(d.assetId){ pm.environment.set(\"assetId\",d.assetId); pm.environment.set(d.role === \"person\" ? \"personAssetId\" : \"garmentAssetId\",d.assetId); }",
+                  "  if(d.userId && !d.user) pm.environment.set(\"targetUserId\",d.userId);",
+                  "  if(d.items?.[0]?.orderLineId) pm.environment.set(\"orderLineId\",d.items[0].orderLineId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "GET /api/v1/admin/reports/summary",
           "request": {
             "method": "GET",
@@ -1334,12 +2219,12 @@
                 },
                 {
                   "key": "size",
-                  "value": "20",
+                  "value": "50",
                   "disabled": true
                 }
               ]
             },
-            "description": "Chủ shop đọc danh sách đánh giá chờ duyệt.\nQuyền: hasRole('SHOP_ADMIN')",
+            "description": "Chủ shop đọc danh sách đánh giá từ khách hàng kèm tên sản phẩm và tên người dùng.\nQuyền: hasRole('SHOP_ADMIN')",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -1513,6 +2398,76 @@
           ]
         },
         {
+          "name": "GET /api/v1/admin/shifts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{backendBaseUrl}}/api/v1/admin/shifts",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "shifts"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "50",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Danh sách ca làm việc thu ngân POS cho chủ shop theo dõi và duyệt bàn giao két.\nQuyền: hasRole('SHOP_ADMIN')",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300 && pm.response.headers.get(\"Content-Type\")?.includes(\"json\")) {",
+                  "  const d = pm.response.json();",
+                  "  if(d.requestId && pm.request.url.toString().includes(\"forgot-password\"))pm.environment.set(\"resetRequestId\",d.requestId);",
+                  "  if(d.categoryId) pm.environment.set(\"categoryId\",d.categoryId);",
+                  "  if(d.productId) pm.environment.set(\"productId\",d.productId);",
+                  "  if(d.variantId) pm.environment.set(\"variantId\",d.variantId);",
+                  "  if(d.addressId) pm.environment.set(\"addressId\",d.addressId);",
+                  "  if(d.orderId) pm.environment.set(\"orderId\",d.orderId);",
+                  "  if(d.shiftId) pm.environment.set(\"shiftId\",d.shiftId);",
+                  "  if(d.reviewId) pm.environment.set(\"reviewId\",d.reviewId);",
+                  "  if(d.promotionId) pm.environment.set(\"promotionId\",d.promotionId);",
+                  "  if(Array.isArray(d)&&d[0]?.recommendationId)pm.environment.set(\"recommendationId\",d[0].recommendationId);",
+                  "  if(d.operationId) pm.environment.set(d.kind === \"PRODUCT_ANALYSIS\" ? \"analysisId\" : \"sessionId\", d.operationId);",
+                  "  if(d.assetId){ pm.environment.set(\"assetId\",d.assetId); pm.environment.set(d.role === \"person\" ? \"personAssetId\" : \"garmentAssetId\",d.assetId); }",
+                  "  if(d.userId && !d.user) pm.environment.set(\"targetUserId\",d.userId);",
+                  "  if(d.items?.[0]?.orderLineId) pm.environment.set(\"orderLineId\",d.items[0].orderLineId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "POST /api/v1/admin/shifts/{id}/approve",
           "request": {
             "method": "POST",
@@ -1573,6 +2528,66 @@
           ]
         },
         {
+          "name": "POST /api/v1/admin/shifts/{id}/reject",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{backendBaseUrl}}/api/v1/admin/shifts/{{shiftId}}/reject",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "shifts",
+                "{{shiftId}}",
+                "reject"
+              ]
+            },
+            "description": "Yêu cầu đếm lại / từ chối duyệt ca.\nQuyền: hasRole('SHOP_ADMIN')",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300 && pm.response.headers.get(\"Content-Type\")?.includes(\"json\")) {",
+                  "  const d = pm.response.json();",
+                  "  if(d.requestId && pm.request.url.toString().includes(\"forgot-password\"))pm.environment.set(\"resetRequestId\",d.requestId);",
+                  "  if(d.categoryId) pm.environment.set(\"categoryId\",d.categoryId);",
+                  "  if(d.productId) pm.environment.set(\"productId\",d.productId);",
+                  "  if(d.variantId) pm.environment.set(\"variantId\",d.variantId);",
+                  "  if(d.addressId) pm.environment.set(\"addressId\",d.addressId);",
+                  "  if(d.orderId) pm.environment.set(\"orderId\",d.orderId);",
+                  "  if(d.shiftId) pm.environment.set(\"shiftId\",d.shiftId);",
+                  "  if(d.reviewId) pm.environment.set(\"reviewId\",d.reviewId);",
+                  "  if(d.promotionId) pm.environment.set(\"promotionId\",d.promotionId);",
+                  "  if(Array.isArray(d)&&d[0]?.recommendationId)pm.environment.set(\"recommendationId\",d[0].recommendationId);",
+                  "  if(d.operationId) pm.environment.set(d.kind === \"PRODUCT_ANALYSIS\" ? \"analysisId\" : \"sessionId\", d.operationId);",
+                  "  if(d.assetId){ pm.environment.set(\"assetId\",d.assetId); pm.environment.set(d.role === \"person\" ? \"personAssetId\" : \"garmentAssetId\",d.assetId); }",
+                  "  if(d.userId && !d.user) pm.environment.set(\"targetUserId\",d.userId);",
+                  "  if(d.items?.[0]?.orderLineId) pm.environment.set(\"orderLineId\",d.items[0].orderLineId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "GET /api/v1/admin/users",
           "request": {
             "method": "GET",
@@ -1590,18 +2605,23 @@
               ],
               "query": [
                 {
+                  "key": "role",
+                  "value": "{{role}}",
+                  "disabled": true
+                },
+                {
                   "key": "page",
                   "value": "0",
                   "disabled": true
                 },
                 {
                   "key": "size",
-                  "value": "20",
+                  "value": "100",
                   "disabled": true
                 }
               ]
             },
-            "description": "Danh sách user không có hash mật khẩu hoặc token.\nQuyền: hasRole('SHOP_ADMIN')",
+            "description": "Danh sách user cho quản trị: hỗ trợ lọc role (CUSTOMER / STAFF / ALL), kèm địa chỉ mặc định và phân quyền; không lộ password.\nQuyền: hasRole('SHOP_ADMIN')",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -1692,6 +2712,65 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300 && pm.response.headers.get(\"Content-Type\")?.includes(\"json\")) {",
+                  "  const d = pm.response.json();",
+                  "  if(d.requestId && pm.request.url.toString().includes(\"forgot-password\"))pm.environment.set(\"resetRequestId\",d.requestId);",
+                  "  if(d.categoryId) pm.environment.set(\"categoryId\",d.categoryId);",
+                  "  if(d.productId) pm.environment.set(\"productId\",d.productId);",
+                  "  if(d.variantId) pm.environment.set(\"variantId\",d.variantId);",
+                  "  if(d.addressId) pm.environment.set(\"addressId\",d.addressId);",
+                  "  if(d.orderId) pm.environment.set(\"orderId\",d.orderId);",
+                  "  if(d.shiftId) pm.environment.set(\"shiftId\",d.shiftId);",
+                  "  if(d.reviewId) pm.environment.set(\"reviewId\",d.reviewId);",
+                  "  if(d.promotionId) pm.environment.set(\"promotionId\",d.promotionId);",
+                  "  if(Array.isArray(d)&&d[0]?.recommendationId)pm.environment.set(\"recommendationId\",d[0].recommendationId);",
+                  "  if(d.operationId) pm.environment.set(d.kind === \"PRODUCT_ANALYSIS\" ? \"analysisId\" : \"sessionId\", d.operationId);",
+                  "  if(d.assetId){ pm.environment.set(\"assetId\",d.assetId); pm.environment.set(d.role === \"person\" ? \"personAssetId\" : \"garmentAssetId\",d.assetId); }",
+                  "  if(d.userId && !d.user) pm.environment.set(\"targetUserId\",d.userId);",
+                  "  if(d.items?.[0]?.orderLineId) pm.environment.set(\"orderLineId\",d.items[0].orderLineId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE /api/v1/admin/users/{id}",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{backendBaseUrl}}/api/v1/admin/users/{{targetUserId}}",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "users",
+                "{{targetUserId}}"
+              ]
+            },
+            "description": "Xóa hoặc vô hiệu hóa tài khoản nhân sự; bảo toàn dữ liệu nếu đã có lịch sử đơn/ca.\nQuyền: hasRole('SHOP_ADMIN')",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
                   "if (pm.response.code < 300 && pm.response.headers.get(\"Content-Type\")?.includes(\"json\")) {",
                   "  const d = pm.response.json();",
                   "  if(d.requestId && pm.request.url.toString().includes(\"forgot-password\"))pm.environment.set(\"resetRequestId\",d.requestId);",
@@ -2343,6 +3422,65 @@
               }
             }
           ]
+        },
+        {
+          "name": "POST /api/v1/assets/{id}/detect-color",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{backendBaseUrl}}/api/v1/assets/{{assetId}}/detect-color",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "assets",
+                "{{assetId}}",
+                "detect-color"
+              ]
+            },
+            "description": "Nhận diện lại màu sắc và phân loại bằng AI cho ảnh catalog đã lưu.\nQuyền: hasRole('SHOP_ADMIN')",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300 && pm.response.headers.get(\"Content-Type\")?.includes(\"json\")) {",
+                  "  const d = pm.response.json();",
+                  "  if(d.requestId && pm.request.url.toString().includes(\"forgot-password\"))pm.environment.set(\"resetRequestId\",d.requestId);",
+                  "  if(d.categoryId) pm.environment.set(\"categoryId\",d.categoryId);",
+                  "  if(d.productId) pm.environment.set(\"productId\",d.productId);",
+                  "  if(d.variantId) pm.environment.set(\"variantId\",d.variantId);",
+                  "  if(d.addressId) pm.environment.set(\"addressId\",d.addressId);",
+                  "  if(d.orderId) pm.environment.set(\"orderId\",d.orderId);",
+                  "  if(d.shiftId) pm.environment.set(\"shiftId\",d.shiftId);",
+                  "  if(d.reviewId) pm.environment.set(\"reviewId\",d.reviewId);",
+                  "  if(d.promotionId) pm.environment.set(\"promotionId\",d.promotionId);",
+                  "  if(Array.isArray(d)&&d[0]?.recommendationId)pm.environment.set(\"recommendationId\",d[0].recommendationId);",
+                  "  if(d.operationId) pm.environment.set(d.kind === \"PRODUCT_ANALYSIS\" ? \"analysisId\" : \"sessionId\", d.operationId);",
+                  "  if(d.assetId){ pm.environment.set(\"assetId\",d.assetId); pm.environment.set(d.role === \"person\" ? \"personAssetId\" : \"garmentAssetId\",d.assetId); }",
+                  "  if(d.userId && !d.user) pm.environment.set(\"targetUserId\",d.userId);",
+                  "  if(d.items?.[0]?.orderLineId) pm.environment.set(\"orderLineId\",d.items[0].orderLineId);",
+                  "}"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -2644,7 +3782,7 @@
                 "register"
               ]
             },
-            "description": "Nhận service tài khoản và kho dữ liệu địa chỉ. */ public AuthController(AuthService auth, Db db, LocationService locations) { this.auth = auth; this.db = db; this.locations = locations; } /** Tạo tài khoản khách hàng, trả token để dùng ngay.\nQuyền: Public",
+            "description": "Nhận service tài khoản và kho dữ liệu địa chỉ. */ public AuthController(AuthService auth, Db db, LocationService locations, MediaService media, R2Storage r2) { this.auth = auth; this.db = db; this.locations = locations; this.media = media; this.r2 = r2; } /** Tạo tài khoản khách hàng, trả token để dùng ngay.\nQuyền: Public",
             "auth": {
               "type": "noauth"
             },
@@ -2776,7 +3914,7 @@
                 "cart"
               ]
             },
-            "description": "Nhận service đặt hàng và repository giỏ. */ public OrderController(Db db, OrderService orders) { this.db = db; this.orders = orders; } /** Giỏ cá nhân luôn dùng giá hiện tại, không cam kết giá đến khi checkout.\nQuyền: JWT",
+            "description": "Nhận service đặt hàng và repository giỏ. */ public OrderController(Db db, OrderService orders) { this.db = db; this.orders = orders; } /** Giỏ cá nhân luôn dùng giá hiện tại, kèm thông tin sản phẩm và ảnh đại diện để hiển thị chính xác.\nQuyền: JWT",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -3023,7 +4161,7 @@
                 "categories"
               ]
             },
-            "description": "Nhận service catalog và DB danh mục. */ public CatalogController(Db db, CatalogService service) { this.db = db; this.service = service; } /** Danh mục hiển thị cho khách vãng lai.\nQuyền: Public",
+            "description": "Nhận service catalog và DB danh mục. */ public CatalogController(Db db, CatalogService service, Idempotency keys) { this.db = db; this.service = service; this.keys = keys; } /** Danh mục hiển thị cho khách vãng lai.\nQuyền: Public",
             "auth": {
               "type": "noauth"
             }
@@ -3238,6 +4376,21 @@
                 {
                   "key": "pattern",
                   "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "vtonCategory",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "gender",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "newest",
                   "disabled": true
                 }
               ]
@@ -4164,6 +5317,84 @@
           ]
         },
         {
+          "name": "POST /api/v1/me/avatar",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{backendBaseUrl}}/api/v1/me/avatar",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me",
+                "avatar"
+              ]
+            },
+            "description": "Cập nhật ảnh đại diện của chính mình, upload lên Cloudflare R2 và xóa ảnh cũ trên R2.\nQuyền: JWT",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "role",
+                  "type": "text",
+                  "value": "person"
+                },
+                {
+                  "key": "consent",
+                  "type": "text",
+                  "value": "true"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300 && pm.response.headers.get(\"Content-Type\")?.includes(\"json\")) {",
+                  "  const d = pm.response.json();",
+                  "  if(d.requestId && pm.request.url.toString().includes(\"forgot-password\"))pm.environment.set(\"resetRequestId\",d.requestId);",
+                  "  if(d.categoryId) pm.environment.set(\"categoryId\",d.categoryId);",
+                  "  if(d.productId) pm.environment.set(\"productId\",d.productId);",
+                  "  if(d.variantId) pm.environment.set(\"variantId\",d.variantId);",
+                  "  if(d.addressId) pm.environment.set(\"addressId\",d.addressId);",
+                  "  if(d.orderId) pm.environment.set(\"orderId\",d.orderId);",
+                  "  if(d.shiftId) pm.environment.set(\"shiftId\",d.shiftId);",
+                  "  if(d.reviewId) pm.environment.set(\"reviewId\",d.reviewId);",
+                  "  if(d.promotionId) pm.environment.set(\"promotionId\",d.promotionId);",
+                  "  if(Array.isArray(d)&&d[0]?.recommendationId)pm.environment.set(\"recommendationId\",d[0].recommendationId);",
+                  "  if(d.operationId) pm.environment.set(d.kind === \"PRODUCT_ANALYSIS\" ? \"analysisId\" : \"sessionId\", d.operationId);",
+                  "  if(d.assetId){ pm.environment.set(\"assetId\",d.assetId); pm.environment.set(d.role === \"person\" ? \"personAssetId\" : \"garmentAssetId\",d.assetId); }",
+                  "  if(d.userId && !d.user) pm.environment.set(\"targetUserId\",d.userId);",
+                  "  if(d.items?.[0]?.orderLineId) pm.environment.set(\"orderLineId\",d.items[0].orderLineId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "POST /api/v1/me/password",
           "request": {
             "method": "POST",
@@ -4853,7 +6084,7 @@
                 }
               ]
             },
-            "description": "Lịch sử đơn riêng, không nhận userId để xem người khác.\nQuyền: JWT",
+            "description": "Lịch sử đơn riêng, không nhận userId để xem người khác; trả kèm preview sản phẩm.\nQuyền: JWT",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -6720,7 +7951,7 @@
                 "adjustments"
               ]
             },
-            "description": "Nhập hàng/cân kho ghi dấu vết và chặn tồn âm.\nQuyền: hasAnyRole('SHOP_ADMIN','STAFF_WAREHOUSE')",
+            "description": "Nhập hàng/cân kho ghi dấu vết và chặn tồn âm.\nQuyền: hasRole('SHOP_ADMIN')",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -6739,6 +7970,319 @@
                   "language": "json"
                 }
               }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300 && pm.response.headers.get(\"Content-Type\")?.includes(\"json\")) {",
+                  "  const d = pm.response.json();",
+                  "  if(d.requestId && pm.request.url.toString().includes(\"forgot-password\"))pm.environment.set(\"resetRequestId\",d.requestId);",
+                  "  if(d.categoryId) pm.environment.set(\"categoryId\",d.categoryId);",
+                  "  if(d.productId) pm.environment.set(\"productId\",d.productId);",
+                  "  if(d.variantId) pm.environment.set(\"variantId\",d.variantId);",
+                  "  if(d.addressId) pm.environment.set(\"addressId\",d.addressId);",
+                  "  if(d.orderId) pm.environment.set(\"orderId\",d.orderId);",
+                  "  if(d.shiftId) pm.environment.set(\"shiftId\",d.shiftId);",
+                  "  if(d.reviewId) pm.environment.set(\"reviewId\",d.reviewId);",
+                  "  if(d.promotionId) pm.environment.set(\"promotionId\",d.promotionId);",
+                  "  if(Array.isArray(d)&&d[0]?.recommendationId)pm.environment.set(\"recommendationId\",d[0].recommendationId);",
+                  "  if(d.operationId) pm.environment.set(d.kind === \"PRODUCT_ANALYSIS\" ? \"analysisId\" : \"sessionId\", d.operationId);",
+                  "  if(d.assetId){ pm.environment.set(\"assetId\",d.assetId); pm.environment.set(d.role === \"person\" ? \"personAssetId\" : \"garmentAssetId\",d.assetId); }",
+                  "  if(d.userId && !d.user) pm.environment.set(\"targetUserId\",d.userId);",
+                  "  if(d.items?.[0]?.orderLineId) pm.environment.set(\"orderLineId\",d.items[0].orderLineId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/staff/inventory/audit-zones",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{backendBaseUrl}}/api/v1/staff/inventory/audit-zones",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "staff",
+                "inventory",
+                "audit-zones"
+              ]
+            },
+            "description": "Danh mục kiểm kê theo dãy kệ thực tế trong kho từ bảng BienTheSanPham & SanPham.\nQuyền: hasAnyRole('SHOP_ADMIN','STAFF_WAREHOUSE')",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{warehouseToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300 && pm.response.headers.get(\"Content-Type\")?.includes(\"json\")) {",
+                  "  const d = pm.response.json();",
+                  "  if(d.requestId && pm.request.url.toString().includes(\"forgot-password\"))pm.environment.set(\"resetRequestId\",d.requestId);",
+                  "  if(d.categoryId) pm.environment.set(\"categoryId\",d.categoryId);",
+                  "  if(d.productId) pm.environment.set(\"productId\",d.productId);",
+                  "  if(d.variantId) pm.environment.set(\"variantId\",d.variantId);",
+                  "  if(d.addressId) pm.environment.set(\"addressId\",d.addressId);",
+                  "  if(d.orderId) pm.environment.set(\"orderId\",d.orderId);",
+                  "  if(d.shiftId) pm.environment.set(\"shiftId\",d.shiftId);",
+                  "  if(d.reviewId) pm.environment.set(\"reviewId\",d.reviewId);",
+                  "  if(d.promotionId) pm.environment.set(\"promotionId\",d.promotionId);",
+                  "  if(Array.isArray(d)&&d[0]?.recommendationId)pm.environment.set(\"recommendationId\",d[0].recommendationId);",
+                  "  if(d.operationId) pm.environment.set(d.kind === \"PRODUCT_ANALYSIS\" ? \"analysisId\" : \"sessionId\", d.operationId);",
+                  "  if(d.assetId){ pm.environment.set(\"assetId\",d.assetId); pm.environment.set(d.role === \"person\" ? \"personAssetId\" : \"garmentAssetId\",d.assetId); }",
+                  "  if(d.userId && !d.user) pm.environment.set(\"targetUserId\",d.userId);",
+                  "  if(d.items?.[0]?.orderLineId) pm.environment.set(\"orderLineId\",d.items[0].orderLineId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/staff/inventory/audits",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{backendBaseUrl}}/api/v1/staff/inventory/audits",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "staff",
+                "inventory",
+                "audits"
+              ]
+            },
+            "description": "InventoryAuditController: list\nQuyền: hasRole('SHOP_ADMIN')",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{warehouseToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300 && pm.response.headers.get(\"Content-Type\")?.includes(\"json\")) {",
+                  "  const d = pm.response.json();",
+                  "  if(d.requestId && pm.request.url.toString().includes(\"forgot-password\"))pm.environment.set(\"resetRequestId\",d.requestId);",
+                  "  if(d.categoryId) pm.environment.set(\"categoryId\",d.categoryId);",
+                  "  if(d.productId) pm.environment.set(\"productId\",d.productId);",
+                  "  if(d.variantId) pm.environment.set(\"variantId\",d.variantId);",
+                  "  if(d.addressId) pm.environment.set(\"addressId\",d.addressId);",
+                  "  if(d.orderId) pm.environment.set(\"orderId\",d.orderId);",
+                  "  if(d.shiftId) pm.environment.set(\"shiftId\",d.shiftId);",
+                  "  if(d.reviewId) pm.environment.set(\"reviewId\",d.reviewId);",
+                  "  if(d.promotionId) pm.environment.set(\"promotionId\",d.promotionId);",
+                  "  if(Array.isArray(d)&&d[0]?.recommendationId)pm.environment.set(\"recommendationId\",d[0].recommendationId);",
+                  "  if(d.operationId) pm.environment.set(d.kind === \"PRODUCT_ANALYSIS\" ? \"analysisId\" : \"sessionId\", d.operationId);",
+                  "  if(d.assetId){ pm.environment.set(\"assetId\",d.assetId); pm.environment.set(d.role === \"person\" ? \"personAssetId\" : \"garmentAssetId\",d.assetId); }",
+                  "  if(d.userId && !d.user) pm.environment.set(\"targetUserId\",d.userId);",
+                  "  if(d.items?.[0]?.orderLineId) pm.environment.set(\"orderLineId\",d.items[0].orderLineId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/v1/staff/inventory/audits",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{backendBaseUrl}}/api/v1/staff/inventory/audits",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "staff",
+                "inventory",
+                "audits"
+              ]
+            },
+            "description": "InventoryAuditController: submit\nQuyền: hasAnyRole('SHOP_ADMIN','STAFF_WAREHOUSE')",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{warehouseToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lines\": [\n    {\n      \"book\": 1,\n      \"counted\": 1,\n      \"revision\": 1,\n      \"variantId\": \"{{variantId}}\"\n    }\n  ],\n  \"reason\": \"Nhập hàng thử nghiệm\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300 && pm.response.headers.get(\"Content-Type\")?.includes(\"json\")) {",
+                  "  const d = pm.response.json();",
+                  "  if(d.requestId && pm.request.url.toString().includes(\"forgot-password\"))pm.environment.set(\"resetRequestId\",d.requestId);",
+                  "  if(d.categoryId) pm.environment.set(\"categoryId\",d.categoryId);",
+                  "  if(d.productId) pm.environment.set(\"productId\",d.productId);",
+                  "  if(d.variantId) pm.environment.set(\"variantId\",d.variantId);",
+                  "  if(d.addressId) pm.environment.set(\"addressId\",d.addressId);",
+                  "  if(d.orderId) pm.environment.set(\"orderId\",d.orderId);",
+                  "  if(d.shiftId) pm.environment.set(\"shiftId\",d.shiftId);",
+                  "  if(d.reviewId) pm.environment.set(\"reviewId\",d.reviewId);",
+                  "  if(d.promotionId) pm.environment.set(\"promotionId\",d.promotionId);",
+                  "  if(Array.isArray(d)&&d[0]?.recommendationId)pm.environment.set(\"recommendationId\",d[0].recommendationId);",
+                  "  if(d.operationId) pm.environment.set(d.kind === \"PRODUCT_ANALYSIS\" ? \"analysisId\" : \"sessionId\", d.operationId);",
+                  "  if(d.assetId){ pm.environment.set(\"assetId\",d.assetId); pm.environment.set(d.role === \"person\" ? \"personAssetId\" : \"garmentAssetId\",d.assetId); }",
+                  "  if(d.userId && !d.user) pm.environment.set(\"targetUserId\",d.userId);",
+                  "  if(d.items?.[0]?.orderLineId) pm.environment.set(\"orderLineId\",d.items[0].orderLineId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/v1/staff/inventory/audits/{id}/approve",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{backendBaseUrl}}/api/v1/staff/inventory/audits/{{id}}/approve",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "staff",
+                "inventory",
+                "audits",
+                "{{id}}",
+                "approve"
+              ]
+            },
+            "description": "InventoryAuditController: approve\nQuyền: hasRole('SHOP_ADMIN')",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{warehouseToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300 && pm.response.headers.get(\"Content-Type\")?.includes(\"json\")) {",
+                  "  const d = pm.response.json();",
+                  "  if(d.requestId && pm.request.url.toString().includes(\"forgot-password\"))pm.environment.set(\"resetRequestId\",d.requestId);",
+                  "  if(d.categoryId) pm.environment.set(\"categoryId\",d.categoryId);",
+                  "  if(d.productId) pm.environment.set(\"productId\",d.productId);",
+                  "  if(d.variantId) pm.environment.set(\"variantId\",d.variantId);",
+                  "  if(d.addressId) pm.environment.set(\"addressId\",d.addressId);",
+                  "  if(d.orderId) pm.environment.set(\"orderId\",d.orderId);",
+                  "  if(d.shiftId) pm.environment.set(\"shiftId\",d.shiftId);",
+                  "  if(d.reviewId) pm.environment.set(\"reviewId\",d.reviewId);",
+                  "  if(d.promotionId) pm.environment.set(\"promotionId\",d.promotionId);",
+                  "  if(Array.isArray(d)&&d[0]?.recommendationId)pm.environment.set(\"recommendationId\",d[0].recommendationId);",
+                  "  if(d.operationId) pm.environment.set(d.kind === \"PRODUCT_ANALYSIS\" ? \"analysisId\" : \"sessionId\", d.operationId);",
+                  "  if(d.assetId){ pm.environment.set(\"assetId\",d.assetId); pm.environment.set(d.role === \"person\" ? \"personAssetId\" : \"garmentAssetId\",d.assetId); }",
+                  "  if(d.userId && !d.user) pm.environment.set(\"targetUserId\",d.userId);",
+                  "  if(d.items?.[0]?.orderLineId) pm.environment.set(\"orderLineId\",d.items[0].orderLineId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/v1/staff/inventory/audits/{id}/reject",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{backendBaseUrl}}/api/v1/staff/inventory/audits/{{id}}/reject",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "staff",
+                "inventory",
+                "audits",
+                "{{id}}",
+                "reject"
+              ]
+            },
+            "description": "InventoryAuditController: reject\nQuyền: hasRole('SHOP_ADMIN')",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{warehouseToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
@@ -6923,6 +8467,65 @@
           ]
         },
         {
+          "name": "GET /api/v1/staff/inventory/summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{backendBaseUrl}}/api/v1/staff/inventory/summary",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "staff",
+                "inventory",
+                "summary"
+              ]
+            },
+            "description": "Báo cáo Xuất - Nhập - Tồn từ BienTheSanPham và BienDongKho.\nQuyền: hasAnyRole('SHOP_ADMIN','STAFF_WAREHOUSE')",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{warehouseToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300 && pm.response.headers.get(\"Content-Type\")?.includes(\"json\")) {",
+                  "  const d = pm.response.json();",
+                  "  if(d.requestId && pm.request.url.toString().includes(\"forgot-password\"))pm.environment.set(\"resetRequestId\",d.requestId);",
+                  "  if(d.categoryId) pm.environment.set(\"categoryId\",d.categoryId);",
+                  "  if(d.productId) pm.environment.set(\"productId\",d.productId);",
+                  "  if(d.variantId) pm.environment.set(\"variantId\",d.variantId);",
+                  "  if(d.addressId) pm.environment.set(\"addressId\",d.addressId);",
+                  "  if(d.orderId) pm.environment.set(\"orderId\",d.orderId);",
+                  "  if(d.shiftId) pm.environment.set(\"shiftId\",d.shiftId);",
+                  "  if(d.reviewId) pm.environment.set(\"reviewId\",d.reviewId);",
+                  "  if(d.promotionId) pm.environment.set(\"promotionId\",d.promotionId);",
+                  "  if(Array.isArray(d)&&d[0]?.recommendationId)pm.environment.set(\"recommendationId\",d[0].recommendationId);",
+                  "  if(d.operationId) pm.environment.set(d.kind === \"PRODUCT_ANALYSIS\" ? \"analysisId\" : \"sessionId\", d.operationId);",
+                  "  if(d.assetId){ pm.environment.set(\"assetId\",d.assetId); pm.environment.set(d.role === \"person\" ? \"personAssetId\" : \"garmentAssetId\",d.assetId); }",
+                  "  if(d.userId && !d.user) pm.environment.set(\"targetUserId\",d.userId);",
+                  "  if(d.items?.[0]?.orderLineId) pm.environment.set(\"orderLineId\",d.items[0].orderLineId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "GET /api/v1/staff/orders",
           "request": {
             "method": "GET",
@@ -6940,18 +8543,23 @@
               ],
               "query": [
                 {
+                  "key": "status",
+                  "value": "{{status}}",
+                  "disabled": true
+                },
+                {
                   "key": "page",
                   "value": "0",
                   "disabled": true
                 },
                 {
                   "key": "size",
-                  "value": "20",
+                  "value": "100",
                   "disabled": true
                 }
               ]
             },
-            "description": "Đơn staff: shipper chỉ thấy đơn được phân, cashier chỉ thấy đơn mình lập.\nQuyền: hasAnyRole('SHOP_ADMIN','STAFF_WAREHOUSE','STAFF_CASHIER','STAFF_SHIPPER')",
+            "description": "Đơn staff: shipper thấy đơn được phân hoặc nhận thêm, kho thấy toàn bộ đơn kèm chi tiết dòng hàng & kệ.\nQuyền: hasAnyRole('SHOP_ADMIN','STAFF_WAREHOUSE','STAFF_CASHIER','STAFF_SHIPPER')",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -7010,7 +8618,7 @@
                 "{{orderId}}"
               ]
             },
-            "description": "Chi tiết để in pick list/receipt; staff không được lấy đơn ngoài phạm vi.\nQuyền: hasAnyRole('SHOP_ADMIN','STAFF_WAREHOUSE','STAFF_CASHIER','STAFF_SHIPPER')",
+            "description": "Chi tiết để in pick list/receipt; staff không được lấy đơn ngoài phạm vi. Cho phép tìm theo mã đơn hoặc mã SKU/Barcode.\nQuyền: hasAnyRole('SHOP_ADMIN','STAFF_WAREHOUSE','STAFF_CASHIER','STAFF_SHIPPER')",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -7129,7 +8737,12 @@
           "name": "POST /api/v1/staff/orders/{id}/deliver",
           "request": {
             "method": "POST",
-            "header": [],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": {
               "raw": "{{backendBaseUrl}}/api/v1/staff/orders/{{orderId}}/deliver",
               "host": [
@@ -7144,7 +8757,7 @@
                 "deliver"
               ]
             },
-            "description": "Shipper xác nhận đã giao và thu COD; không dùng cho thanh toán VietQR.\nQuyền: hasRole('STAFF_SHIPPER')",
+            "description": "Shipper xác nhận đã giao và thu COD; không dùng cho thanh toán VietQR.\nQuyền: hasAnyRole('SHOP_ADMIN','STAFF_SHIPPER')",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -7154,6 +8767,15 @@
                   "type": "string"
                 }
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
@@ -7189,7 +8811,12 @@
           "name": "POST /api/v1/staff/orders/{id}/delivery-failed",
           "request": {
             "method": "POST",
-            "header": [],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": {
               "raw": "{{backendBaseUrl}}/api/v1/staff/orders/{{orderId}}/delivery-failed",
               "host": [
@@ -7204,7 +8831,7 @@
                 "delivery-failed"
               ]
             },
-            "description": "Giao thất bại chuyển về kho chờ phân lại, chưa hoàn tồn khi hàng chưa về.\nQuyền: hasRole('STAFF_SHIPPER')",
+            "description": "Giao thất bại chuyển về kho chờ phân lại hoặc cập nhật số lần giao và lý do.\nQuyền: hasAnyRole('SHOP_ADMIN','STAFF_SHIPPER')",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -7214,6 +8841,15 @@
                   "type": "string"
                 }
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
@@ -7366,6 +9002,66 @@
           ]
         },
         {
+          "name": "POST /api/v1/staff/orders/{id}/pickup",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{backendBaseUrl}}/api/v1/staff/orders/{{orderId}}/pickup",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "staff",
+                "orders",
+                "{{orderId}}",
+                "pickup"
+              ]
+            },
+            "description": "Shipper quét nhận thêm kiện hàng đóng gói vào lộ trình giao cá nhân.\nQuyền: hasAnyRole('SHOP_ADMIN','STAFF_SHIPPER')",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{warehouseToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300 && pm.response.headers.get(\"Content-Type\")?.includes(\"json\")) {",
+                  "  const d = pm.response.json();",
+                  "  if(d.requestId && pm.request.url.toString().includes(\"forgot-password\"))pm.environment.set(\"resetRequestId\",d.requestId);",
+                  "  if(d.categoryId) pm.environment.set(\"categoryId\",d.categoryId);",
+                  "  if(d.productId) pm.environment.set(\"productId\",d.productId);",
+                  "  if(d.variantId) pm.environment.set(\"variantId\",d.variantId);",
+                  "  if(d.addressId) pm.environment.set(\"addressId\",d.addressId);",
+                  "  if(d.orderId) pm.environment.set(\"orderId\",d.orderId);",
+                  "  if(d.shiftId) pm.environment.set(\"shiftId\",d.shiftId);",
+                  "  if(d.reviewId) pm.environment.set(\"reviewId\",d.reviewId);",
+                  "  if(d.promotionId) pm.environment.set(\"promotionId\",d.promotionId);",
+                  "  if(Array.isArray(d)&&d[0]?.recommendationId)pm.environment.set(\"recommendationId\",d[0].recommendationId);",
+                  "  if(d.operationId) pm.environment.set(d.kind === \"PRODUCT_ANALYSIS\" ? \"analysisId\" : \"sessionId\", d.operationId);",
+                  "  if(d.assetId){ pm.environment.set(\"assetId\",d.assetId); pm.environment.set(d.role === \"person\" ? \"personAssetId\" : \"garmentAssetId\",d.assetId); }",
+                  "  if(d.userId && !d.user) pm.environment.set(\"targetUserId\",d.userId);",
+                  "  if(d.items?.[0]?.orderLineId) pm.environment.set(\"orderLineId\",d.items[0].orderLineId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "POST /api/v1/staff/orders/{id}/receive-return",
           "request": {
             "method": "POST",
@@ -7382,9 +9078,16 @@
                 "orders",
                 "{{orderId}}",
                 "receive-return"
+              ],
+              "query": [
+                {
+                  "key": "restock",
+                  "value": "true",
+                  "disabled": true
+                }
               ]
             },
-            "description": "Kho xác nhận nhận lại hàng vật lý và hoàn tồn một lần.\nQuyền: hasAnyRole('SHOP_ADMIN','STAFF_WAREHOUSE')",
+            "description": "Xác nhận đổi trả/nhận lại hàng tại quầy hoặc kho và hoàn tồn một lần hoặc chuyển kho lỗi.\nQuyền: hasAnyRole('SHOP_ADMIN','STAFF_WAREHOUSE','STAFF_CASHIER')",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -7607,6 +9310,182 @@
               ]
             },
             "description": "CatalogController: adminProduct\nQuyền: hasAnyRole('SHOP_ADMIN','STAFF_CASHIER','STAFF_WAREHOUSE','STAFF_SHIPPER')",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{warehouseToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300 && pm.response.headers.get(\"Content-Type\")?.includes(\"json\")) {",
+                  "  const d = pm.response.json();",
+                  "  if(d.requestId && pm.request.url.toString().includes(\"forgot-password\"))pm.environment.set(\"resetRequestId\",d.requestId);",
+                  "  if(d.categoryId) pm.environment.set(\"categoryId\",d.categoryId);",
+                  "  if(d.productId) pm.environment.set(\"productId\",d.productId);",
+                  "  if(d.variantId) pm.environment.set(\"variantId\",d.variantId);",
+                  "  if(d.addressId) pm.environment.set(\"addressId\",d.addressId);",
+                  "  if(d.orderId) pm.environment.set(\"orderId\",d.orderId);",
+                  "  if(d.shiftId) pm.environment.set(\"shiftId\",d.shiftId);",
+                  "  if(d.reviewId) pm.environment.set(\"reviewId\",d.reviewId);",
+                  "  if(d.promotionId) pm.environment.set(\"promotionId\",d.promotionId);",
+                  "  if(Array.isArray(d)&&d[0]?.recommendationId)pm.environment.set(\"recommendationId\",d[0].recommendationId);",
+                  "  if(d.operationId) pm.environment.set(d.kind === \"PRODUCT_ANALYSIS\" ? \"analysisId\" : \"sessionId\", d.operationId);",
+                  "  if(d.assetId){ pm.environment.set(\"assetId\",d.assetId); pm.environment.set(d.role === \"person\" ? \"personAssetId\" : \"garmentAssetId\",d.assetId); }",
+                  "  if(d.userId && !d.user) pm.environment.set(\"targetUserId\",d.userId);",
+                  "  if(d.items?.[0]?.orderLineId) pm.environment.set(\"orderLineId\",d.items[0].orderLineId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/staff/shipper/pending-parcels",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{backendBaseUrl}}/api/v1/staff/shipper/pending-parcels",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "staff",
+                "shipper",
+                "pending-parcels"
+              ]
+            },
+            "description": "Kiện hàng đã đóng gói đang chờ bàn giao cho shipper tiếp nhận thêm.\nQuyền: hasAnyRole('SHOP_ADMIN','STAFF_SHIPPER')",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{warehouseToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300 && pm.response.headers.get(\"Content-Type\")?.includes(\"json\")) {",
+                  "  const d = pm.response.json();",
+                  "  if(d.requestId && pm.request.url.toString().includes(\"forgot-password\"))pm.environment.set(\"resetRequestId\",d.requestId);",
+                  "  if(d.categoryId) pm.environment.set(\"categoryId\",d.categoryId);",
+                  "  if(d.productId) pm.environment.set(\"productId\",d.productId);",
+                  "  if(d.variantId) pm.environment.set(\"variantId\",d.variantId);",
+                  "  if(d.addressId) pm.environment.set(\"addressId\",d.addressId);",
+                  "  if(d.orderId) pm.environment.set(\"orderId\",d.orderId);",
+                  "  if(d.shiftId) pm.environment.set(\"shiftId\",d.shiftId);",
+                  "  if(d.reviewId) pm.environment.set(\"reviewId\",d.reviewId);",
+                  "  if(d.promotionId) pm.environment.set(\"promotionId\",d.promotionId);",
+                  "  if(Array.isArray(d)&&d[0]?.recommendationId)pm.environment.set(\"recommendationId\",d[0].recommendationId);",
+                  "  if(d.operationId) pm.environment.set(d.kind === \"PRODUCT_ANALYSIS\" ? \"analysisId\" : \"sessionId\", d.operationId);",
+                  "  if(d.assetId){ pm.environment.set(\"assetId\",d.assetId); pm.environment.set(d.role === \"person\" ? \"personAssetId\" : \"garmentAssetId\",d.assetId); }",
+                  "  if(d.userId && !d.user) pm.environment.set(\"targetUserId\",d.userId);",
+                  "  if(d.items?.[0]?.orderLineId) pm.environment.set(\"orderLineId\",d.items[0].orderLineId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/v1/staff/shipper/settle",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{backendBaseUrl}}/api/v1/staff/shipper/settle",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "staff",
+                "shipper",
+                "settle"
+              ]
+            },
+            "description": "Quyết toán ca giao hàng cuối ngày của shipper nộp tiền COD cho thu ngân.\nQuyền: hasAnyRole('SHOP_ADMIN','STAFF_SHIPPER')",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{warehouseToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300 && pm.response.headers.get(\"Content-Type\")?.includes(\"json\")) {",
+                  "  const d = pm.response.json();",
+                  "  if(d.requestId && pm.request.url.toString().includes(\"forgot-password\"))pm.environment.set(\"resetRequestId\",d.requestId);",
+                  "  if(d.categoryId) pm.environment.set(\"categoryId\",d.categoryId);",
+                  "  if(d.productId) pm.environment.set(\"productId\",d.productId);",
+                  "  if(d.variantId) pm.environment.set(\"variantId\",d.variantId);",
+                  "  if(d.addressId) pm.environment.set(\"addressId\",d.addressId);",
+                  "  if(d.orderId) pm.environment.set(\"orderId\",d.orderId);",
+                  "  if(d.shiftId) pm.environment.set(\"shiftId\",d.shiftId);",
+                  "  if(d.reviewId) pm.environment.set(\"reviewId\",d.reviewId);",
+                  "  if(d.promotionId) pm.environment.set(\"promotionId\",d.promotionId);",
+                  "  if(Array.isArray(d)&&d[0]?.recommendationId)pm.environment.set(\"recommendationId\",d[0].recommendationId);",
+                  "  if(d.operationId) pm.environment.set(d.kind === \"PRODUCT_ANALYSIS\" ? \"analysisId\" : \"sessionId\", d.operationId);",
+                  "  if(d.assetId){ pm.environment.set(\"assetId\",d.assetId); pm.environment.set(d.role === \"person\" ? \"personAssetId\" : \"garmentAssetId\",d.assetId); }",
+                  "  if(d.userId && !d.user) pm.environment.set(\"targetUserId\",d.userId);",
+                  "  if(d.items?.[0]?.orderLineId) pm.environment.set(\"orderLineId\",d.items[0].orderLineId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/staff/shippers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{backendBaseUrl}}/api/v1/staff/shippers",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "staff",
+                "shippers"
+              ]
+            },
+            "description": "Danh sách nhân viên giao hàng đang hoạt động để kho bàn giao kiện hàng.\nQuyền: hasAnyRole('SHOP_ADMIN','STAFF_WAREHOUSE')",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -8080,6 +9959,70 @@
               ]
             },
             "description": "Thử đối soát lại hoặc gọi retry theo policy lỗi tạm của AI.\nQuyền: JWT",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300 && pm.response.headers.get(\"Content-Type\")?.includes(\"json\")) {",
+                  "  const d = pm.response.json();",
+                  "  if(d.requestId && pm.request.url.toString().includes(\"forgot-password\"))pm.environment.set(\"resetRequestId\",d.requestId);",
+                  "  if(d.categoryId) pm.environment.set(\"categoryId\",d.categoryId);",
+                  "  if(d.productId) pm.environment.set(\"productId\",d.productId);",
+                  "  if(d.variantId) pm.environment.set(\"variantId\",d.variantId);",
+                  "  if(d.addressId) pm.environment.set(\"addressId\",d.addressId);",
+                  "  if(d.orderId) pm.environment.set(\"orderId\",d.orderId);",
+                  "  if(d.shiftId) pm.environment.set(\"shiftId\",d.shiftId);",
+                  "  if(d.reviewId) pm.environment.set(\"reviewId\",d.reviewId);",
+                  "  if(d.promotionId) pm.environment.set(\"promotionId\",d.promotionId);",
+                  "  if(Array.isArray(d)&&d[0]?.recommendationId)pm.environment.set(\"recommendationId\",d[0].recommendationId);",
+                  "  if(d.operationId) pm.environment.set(d.kind === \"PRODUCT_ANALYSIS\" ? \"analysisId\" : \"sessionId\", d.operationId);",
+                  "  if(d.assetId){ pm.environment.set(\"assetId\",d.assetId); pm.environment.set(d.role === \"person\" ? \"personAssetId\" : \"garmentAssetId\",d.assetId); }",
+                  "  if(d.userId && !d.user) pm.environment.set(\"targetUserId\",d.userId);",
+                  "  if(d.items?.[0]?.orderLineId) pm.environment.set(\"orderLineId\",d.items[0].orderLineId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "users",
+      "item": [
+        {
+          "name": "GET /api/v1/users/{id}/avatar",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{backendBaseUrl}}/api/v1/users/{{targetUserId}}/avatar",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{targetUserId}}",
+                "avatar"
+              ]
+            },
+            "description": "Xem ảnh đại diện của người dùng theo ID (public cache 7 ngày).\nQuyền: JWT",
             "auth": {
               "type": "bearer",
               "bearer": [

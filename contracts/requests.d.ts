@@ -17,6 +17,7 @@ export interface Address {
 export interface Adjustment {
   delta: number;
   reason: string;
+  type?: string;
   variantId: string;
 }
 
@@ -54,6 +55,7 @@ export interface Checkout {
   cashReceived?: number;
   customerId?: string;
   items: Array<Item>;
+  paymentMethod?: string;
   voucher?: string;
 }
 
@@ -62,6 +64,18 @@ export interface Conversion {
   provinceCode: string;
   street?: string;
   wardCode?: string;
+}
+
+export interface Count {
+  book: number;
+  counted: number;
+  revision: number;
+  variantId: string;
+}
+
+export interface Draft {
+  lines: Array<Count>;
+  reason: string;
 }
 
 export interface ErrorBody {
@@ -106,6 +120,10 @@ export interface Password {
   newPassword: string;
 }
 
+export interface PaymentConfirmation {
+  transactionRef: string;
+}
+
 export interface Person {
   assetId: string;
   vtonCategory?: string;
@@ -114,20 +132,41 @@ export interface Person {
 export interface Product {
   categoryId: string;
   description?: string;
+  extractedPalette?: string;
   fit: string;
   length: string;
   material?: string;
   name: string;
   pattern: string;
+  status?: string;
   subtype: string;
   vtonCategory: string;
   waist: string;
 }
 
+export interface ProductImageItem {
+  assetId: string;
+  colors: string;
+  cover: boolean;
+  cutoutAssetId?: string;
+  imageId?: string;
+  maskAssetId?: string;
+  position: number;
+  role?: string;
+}
+
+export interface ProductImages {
+  extractedPalette?: string;
+  images: Array<ProductImageItem>;
+  maskAssetId?: string;
+}
+
 export interface Profile {
   currentPassword?: string;
+  dateOfBirth?: Record<string, unknown>;
   email?: string;
   fullName: string;
+  gender?: string;
   phone?: string;
 }
 
@@ -144,8 +183,10 @@ export interface Promotion {
 }
 
 export interface Register {
+  dateOfBirth?: Record<string, unknown>;
   email: string;
   fullName?: string;
+  gender?: string;
   password: string;
   phone: string;
   username: string;
@@ -173,6 +214,13 @@ export interface Route {
   garmentSubtype?: string;
   personFrame: string;
   vtonCategory: string;
+}
+
+export interface SegmentRequest {
+  garmentAssetId: string;
+  referenceAssetId?: string;
+  subtype?: string;
+  vtonCategory?: string;
 }
 
 export interface ShiftMoney {
@@ -206,6 +254,14 @@ export interface Unit {
   type?: string;
 }
 
+export interface UpdateOrder {
+  address?: string;
+  note?: string;
+  phone?: string;
+  recipientName?: string;
+  status?: string;
+}
+
 export interface Variant {
   colorName: string;
   colors: string;
@@ -215,4 +271,10 @@ export interface Variant {
   size: string;
   sku: string;
   status: string;
+  stock?: number;
+}
+
+export interface VtonQuickUpdate {
+  subtype?: string;
+  vtonCategory: string;
 }

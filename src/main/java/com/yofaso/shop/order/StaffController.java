@@ -20,15 +20,18 @@ public class StaffController {
   public record Adjustment(
       @NotBlank @Size(max = 20) String variantId,
       @Min(-100000) @Max(100000) int delta,
-      @NotBlank @Size(max = 255) String reason) {}
+      @NotBlank @Size(max = 255) String reason,
+      @Pattern(regexp = "NHAP_KHO_BO_SUNG") String type) {}
 
   public record Assignment(@NotBlank @Size(max = 20) String shipperId) {}
+
+  public record PaymentConfirmation(@NotBlank @Size(max = 100) String transactionRef) {}
 
   public record UpdateOrder(
       @Size(max = 150) String recipientName,
       @Size(max = 20) String phone,
-      @Size(max = 500) String address,
-      @Size(max = 1000) String note,
+      @Size(max = 255) String address,
+      @Size(max = 255) String note,
       @Pattern(regexp = "CHO_XAC_NHAN|DANG_DONG_GOI|DANG_GIAO_HANG|HOAN_TAT|DA_HUY|TRA_HANG") String status) {}
 
   public record ShiftMoney(
@@ -275,7 +278,7 @@ public class StaffController {
 
   /** Nhập hàng/cân kho ghi dấu vết và chặn tồn âm. */
   @PostMapping("/staff/inventory/adjustments")
-  @PreAuthorize("hasAnyRole('SHOP_ADMIN','STAFF_WAREHOUSE')")
+  @PreAuthorize("hasRole('SHOP_ADMIN')")
   @Transactional
   public Map<String, Object> adjust(
       @RequestHeader("Idempotency-Key") String key,
@@ -283,8 +286,11 @@ public class StaffController {
       Authentication a) {
     String old = keys.existing(a.getName(), "INVENTORY_ADJUST", key, b);
     if (old != null) return Map.of("updated", true, "movementId", old);
+    Problem.require(b.type() == null || b.delta() > 0, 422, "STOCK_RECEIPT_INVALID",
+        "Số lượng nhập kho phải lớn hơn 0.");
     String movement =
-        stock.moveWithId(b.variantId(), b.delta(), "KIEM_KE_CAN_KHO", null, a.getName(), b.reason(),keys.resourceId(a.getName(),"INVENTORY_ADJUST",key,"BDK"));
+        stock.moveWithId(b.variantId(), b.delta(), b.type() == null ? "KIEM_KE_CAN_KHO" : b.type(),
+            null, a.getName(), b.reason(),keys.resourceId(a.getName(),"INVENTORY_ADJUST",key,"BDK"));
     keys.complete(a.getName(), "INVENTORY_ADJUST", key, movement);
     return Map.of("updated", true, "movementId", movement);
   }
@@ -439,9 +445,9 @@ public class StaffController {
             "SELECT d.MaDonHang FROM DonHang d "
                 + "JOIN ChiTietDonHang c ON c.MaDonHang = d.MaDonHang "
                 + "JOIN BienTheSanPham b ON b.MaBienThe = c.MaBienThe "
-                + "WHERE UPPER(b.MaQuanLyHangHoa) = ? OR UPPER(b.MaVach) = ? "
-                + "ORDER BY CASE WHEN d.TrangThaiDonHang IN ('TRA_HANG', 'DANG_GIAO_HANG', 'CHO_SHIPPER') THEN 1 ELSE 2 END, d.NgayTao DESC LIMIT 1",
-            clean, clean);
+                + "WHERE UPPER(b.MaQuanLyHangHoa) = ? "
+                + "ORDER BY CASE WHEN d.TrangThaiDonHang IN ('TRA_HANG', 'DANG_GIAO_HANG') THEN 1 ELSE 2 END, d.NgayTao DESC LIMIT 1",
+            clean);
         if (!bySku.isEmpty()) {
           target = Db.text(bySku.get(0), "MaDonHang");
         }
@@ -533,7 +539,7 @@ public class StaffController {
             + "COALESCE(GhiChuDonHang, 'Cho xem hàng, không cho thử') AS ghiChu, "
             + "SoLanGiao AS soLanGiao, 'DANG_GIAO_HANG' AS status "
             + "FROM DonHang "
-            + "WHERE KenhBanHang='ONLINE_APP' AND TrangThaiDonHang IN ('DANG_DONG_GOI', 'CHO_XAC_NHAN') AND MaNguoiGiaoHang IS NULL "
+            + "WHERE KenhBanHang='ONLINE_APP' AND TrangThaiDonHang='DANG_DONG_GOI' AND MaNguoiGiaoHang IS NULL "
             + "ORDER BY NgayTao DESC LIMIT 50");
   }
 
@@ -541,20 +547,7 @@ public class StaffController {
   @PostMapping("/staff/orders/{id}/pickup")
   @PreAuthorize("hasAnyRole('SHOP_ADMIN','STAFF_SHIPPER')")
   public Map<String, Object> pickup(@PathVariable String id, Authentication a) {
-    var o = db.one("SELECT * FROM DonHang WHERE MaDonHang=? FOR UPDATE", id);
-    Problem.require(!o.isEmpty(), 404, "NOT_FOUND", "Không tìm thấy đơn hàng.");
-    String state = Db.text(o, "TrangThaiDonHang");
-    Problem.require(
-        Set.of("CHO_XAC_NHAN", "DANG_DONG_GOI").contains(state),
-        409,
-        "ORDER_STATE_INVALID",
-        "Đơn hàng không ở trạng thái chờ giao.");
-    db.exec(
-        "UPDATE DonHang SET MaNguoiGiaoHang=?, TrangThaiDonHang='DANG_GIAO_HANG', SoLanGiao=SoLanGiao+1 WHERE MaDonHang=?",
-        a.getName(),
-        id);
-    db.audit(a.getName(), "ORDER_SHIPPER_PICKUP", id);
-    return orders.detail(id);
+    return orders.transition(id, a.getName(), "pickup", a.getName());
   }
 
   /** Quyết toán ca giao hàng cuối ngày của shipper nộp tiền COD cho thu ngân. */
@@ -582,6 +575,7 @@ public class StaffController {
     var rows = db.rows(
         "SELECT b.MaBienThe AS variantId, b.MaQuanLyHangHoa AS sku, p.TenSanPham AS ten, "
             + "b.KichCo AS size, b.TenMau AS mau, b.SoLuongTonKho AS book, "
+            + "(SELECT COUNT(*) FROM BienDongKho m WHERE m.MaBienThe=b.MaBienThe) AS revision, "
             + "COALESCE(b.ViTriGiaKe, 'KHO-01') AS ke "
             + "FROM BienTheSanPham b "
             + "JOIN SanPham p ON p.MaSanPham = b.MaSanPham "
@@ -803,8 +797,10 @@ public class StaffController {
   @PreAuthorize("hasRole('SHOP_ADMIN')")
   public Map<String, Object> updateOrder(
       @PathVariable String id, @Valid @RequestBody UpdateOrder b, Authentication a) {
-    var order = db.one("SELECT MaDonHang, TrangThaiDonHang FROM DonHang WHERE MaDonHang=?", id);
+    var order = db.one("SELECT MaDonHang, TrangThaiDonHang FROM DonHang WHERE MaDonHang=? FOR UPDATE", id);
     Problem.require(!order.isEmpty(), 404, "NOT_FOUND", "Không tìm thấy đơn hàng.");
+    Problem.require(b.status() == null || b.status().equals(order.get("TrangThaiDonHang")),
+        409, "ORDER_STATE_INVALID", "Dùng thao tác nghiệp vụ để chuyển trạng thái đơn.");
 
     List<String> updates = new ArrayList<>();
     List<Object> params = new ArrayList<>();
@@ -814,34 +810,31 @@ public class StaffController {
       params.add(b.recipientName());
     }
     if (b.phone() != null && !b.phone().isBlank()) {
-      updates.add("SoDienThoaiNguoiNhan=?");
+      updates.add("SoDienThoaiNhan=?");
       params.add(b.phone());
     }
     if (b.address() != null && !b.address().isBlank()) {
-      updates.add("DiaChiGiaoHang=?");
+      updates.add("DiaChiGiaoChiTiet=?");
       params.add(b.address());
     }
     if (b.note() != null) {
       updates.add("GhiChuDonHang=?");
       params.add(b.note());
     }
-    if (b.status() != null && !b.status().isBlank()) {
-      updates.add("TrangThaiDonHang=?");
-      params.add(b.status());
-    }
-
     if (!updates.isEmpty()) {
       params.add(id);
       db.exec("UPDATE DonHang SET " + String.join(", ", updates) + " WHERE MaDonHang=?", params.toArray());
-      if ("HOAN_TAT".equals(b.status())) {
-        db.exec("UPDATE NguoiDung_KhuyenMai SET TrangThai='DA_DUNG' WHERE MaDonHangDaDung=?", id);
-      } else if ("DA_HUY".equals(b.status()) || "TRA_HANG".equals(b.status())) {
-        db.exec("UPDATE NguoiDung_KhuyenMai SET TrangThai='CHUA_DUNG', MaDonHangDaDung=NULL, NgaySuDung=NULL WHERE MaDonHangDaDung=?", id);
-      }
       db.audit(a.getName(), "ORDER_UPDATE", id);
     }
 
     return Map.of("updated", true, "orderId", id);
+  }
+
+  @PostMapping("/admin/orders/{id}/confirm-payment")
+  @PreAuthorize("hasRole('SHOP_ADMIN')")
+  public synchronized Map<String, Object> confirmPayment(
+      @PathVariable String id, @Valid @RequestBody PaymentConfirmation body) {
+    return orders.markPaidOnline(id, body.transactionRef().trim());
   }
 
   /** Danh sách ca làm việc thu ngân POS cho chủ shop theo dõi và duyệt bàn giao két. */
@@ -893,6 +886,9 @@ public class StaffController {
             + "b.LoaiBienDong AS type, b.SoLuongThayDoi AS delta, "
             + "b.SoLuongTonTruoc AS beforeStock, b.SoLuongTonSau AS afterStock, "
             + "b.MaThamChieu AS referenceId, b.GhiChu AS reason, "
+            + "CASE WHEN b.LoaiBienDong IN ('XUAT_KHO_GIAO_HANG','NHAP_KHO_HANG_HOAN')"
+            + " THEN (SELECT c.SoLuong FROM ChiTietDonHang c WHERE c.MaDonHang=b.MaThamChieu"
+            + " AND c.MaBienThe=b.MaBienThe LIMIT 1) ELSE ABS(b.SoLuongThayDoi) END AS quantity, "
             + "b.MaNhanVienThucHien AS performerId, COALESCE(u.HoVaTen, b.MaNhanVienThucHien) AS performerName, "
             + "b.NgayThucHien AS createdAt "
             + "FROM BienDongKho b "

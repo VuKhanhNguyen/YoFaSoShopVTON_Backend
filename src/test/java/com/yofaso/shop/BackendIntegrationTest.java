@@ -29,6 +29,7 @@ import tools.jackson.databind.json.JsonMapper;
 class BackendIntegrationTest {
   @LocalServerPort int port;
   @Autowired Db db;
+  @Autowired OrderService orderService;
   @Autowired PasswordEncoder passwords;
   @Autowired JsonMapper json;
   @Autowired AiService ai;
@@ -95,6 +96,8 @@ class BackendIntegrationTest {
             assertEquals("upper_body", body.get("vtonCategory"));
             jobExists = true;
             response = "{\"jobId\":\"testJob\",\"status\":\"QUEUED\",\"simulated\":true}";
+          } else if (path.equals("/internal/v1/jobs/catalogCancelled")) {
+            response = "{\"jobId\":\"catalogCancelled\",\"status\":\"CANCELLED\",\"simulated\":true}";
           } else if (path.endsWith("/cancel")) {
             response = "{\"jobId\":\"testJob\",\"status\":\"CANCELLED\",\"simulated\":true}";
           } else if (path.endsWith("/retry")) {
@@ -370,7 +373,7 @@ class BackendIntegrationTest {
       call(
           "POST",
           "/staff/inventory/adjustments",
-          warehouse,
+          admin,
           Map.of("variantId", id, "delta", 10, "reason", "Fixture test"),
           200);
     call(
@@ -382,7 +385,7 @@ class BackendIntegrationTest {
     call(
         "POST",
         "/staff/inventory/adjustments",
-        warehouse,
+        admin,
         Map.of("variantId", variant, "delta", -100, "reason", "âm"),
         409);
     call("GET", "/catalog/products?q=Áo", null, null, 200);
@@ -416,7 +419,9 @@ class BackendIntegrationTest {
         10, db.count("SELECT SoLuongTonKho FROM BienTheSanPham WHERE MaBienThe=?", variant));
     var priceHack = new HashMap<String, Object>(checkout);
     priceHack.put("total", 1);
-    call("POST", "/orders", customer, priceHack, 400, "price-hack-key");
+    var ignoredPrice = call("POST", "/orders", customer, priceHack, 201, "price-hack-key");
+    assertEquals(result.get("total"), ignoredPrice.get("total"));
+    call("POST", "/orders/" + ignoredPrice.get("orderId") + "/cancel", customer, Map.of(), 200);
     call(
         "POST",
         "/orders",
@@ -560,8 +565,30 @@ class BackendIntegrationTest {
             201,
             "pos-cash-test-key");
     assertEquals("HOAN_TAT", result.get("status"));
+    db.exec("UPDATE BienTheSanPham SET SoLuongTonKho=1 WHERE MaBienThe=?", bottom);
+    try (var pool = Executors.newFixedThreadPool(2)) {
+      var items = List.of(Map.of("variantId", bottom, "quantity", 1));
+      var pos = pool.submit(() -> checkoutStatus("/pos/orders", cashier,
+          Map.of("items", items, "cashReceived", 1000000), "pos-last-stock"));
+      var online = pool.submit(() -> checkoutStatus("/orders", customer,
+          Map.of("items", items, "addressId", address), "online-last-stock"));
+      assertEquals(Set.of(201, 409), Set.of(pos.get(), online.get()));
+      assertEquals(0, db.count("SELECT SoLuongTonKho FROM BienTheSanPham WHERE MaBienThe=?", bottom));
+    } catch (Exception error) {
+      throw new AssertionError(error);
+    }
+    db.exec("UPDATE BienTheSanPham SET SoLuongTonKho=10 WHERE MaBienThe=?", bottom);
     call("POST", "/pos/shifts/" + shift + "/close", cashier, Map.of("amount", 200000), 200);
     call("POST", "/admin/shifts/" + shift + "/approve", admin, Map.of(), 200);
+  }
+
+  int checkoutStatus(String path, String token, Map<String, Object> body, String key) throws Exception {
+    var request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/v1" + path))
+        .header("Authorization", "Bearer " + token)
+        .header("Content-Type", "application/json")
+        .header("Idempotency-Key", key)
+        .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(body))).build();
+    return http.send(request, HttpResponse.BodyHandlers.discarding()).statusCode();
   }
 
   /** Điểm tra bảng Excel, không nhận điểm do client tự gán. */
@@ -1046,7 +1073,8 @@ class BackendIntegrationTest {
     call("POST", "/staff/orders/" + id + "/pack", warehouse, Map.of(), 200);
     call("POST", "/staff/orders/" + id + "/assign", warehouse, Map.of("shipperId", sid), 200);
     call("POST", "/staff/orders/" + id + "/delivery-failed", shipper, Map.of(), 200);
-    call("POST", "/staff/orders/" + id + "/assign", warehouse, Map.of("shipperId", sid), 200);
+    call("POST", "/staff/orders/" + id + "/assign", warehouse, Map.of("shipperId", sid), 409);
+    call("POST", "/staff/orders/" + id + "/delivery-failed", shipper, Map.of("reason", "TU_CHOI_NHAN"), 200);
     long before = db.count("SELECT SoLuongTonKho FROM BienTheSanPham WHERE MaBienThe=?", variant);
     call("POST", "/staff/orders/" + id + "/receive-return", warehouse, Map.of(), 200);
     call("POST", "/staff/orders/" + id + "/receive-return", warehouse, Map.of(), 200);
@@ -1190,6 +1218,57 @@ class BackendIntegrationTest {
     call("GET", "/catalog/products/" + product, null, null, 404);
   }
 
+  @Test
+  @Order(21)
+  void productLifecycleKeepsSameProductAndProtectsPublish() throws Exception {
+    String lifecycleCategory = call("POST", "/admin/categories", admin, Map.of("name", "Vòng đời sản phẩm", "position", 0), 201).get("categoryId").toString();
+    var body = Map.of(
+        "categoryId", lifecycleCategory, "name", "Vòng đời catalog",
+        "fit", "SUONG_VUA", "waist", "KHONG_AP_DUNG", "length", "AO_TIEU_CHUAN",
+        "pattern", "VAI_TRON", "vtonCategory", "upper_body",
+        "subtype", "short_sleeved_shirt", "status", "DANG_KINH_DOANH");
+    var draft = call("POST", "/admin/products", admin, body, 201, "catalog-create-key");
+    String id = draft.get("productId").toString();
+    String path = "/admin/products/" + id;
+    assertEquals("BAN_NHAP", draft.get("status"));
+    assertEquals(id, call("POST", "/admin/products", admin, body, 201, "catalog-create-key").get("productId"));
+    assertEquals("BAN_NHAP", call("PUT", path, admin, body, 200).get("status"));
+    call("POST", path + "/publish", admin, Map.of(), 409);
+    call("GET", "/catalog/products/" + id, null, null, 404);
+
+    var sku = Map.of("sku", "CATALOG-LIFECYCLE-M", "size", "M", "colorName", "Trắng",
+        "colors", "#FFFFFF", "price", 100000, "status", "DANG_BAN", "stock", 2);
+    String variantId = call("POST", path + "/variants", admin, sku, 201, "catalog-variant-key").get("variantId").toString();
+    assertEquals(variantId, call("POST", path + "/variants", admin, sku, 201, "catalog-variant-key").get("variantId"));
+    String image = Db.id("HA");
+    String imageKey = "catalog/products/test/lifecycle.png";
+    media.saveToCache(imageKey, png);
+    db.exec("INSERT INTO HinhAnhSanPham(MaHinhAnh,MaSanPham,MaMauSac,DuongDanAnhGoc,DuongDanAnhBocNen) VALUES(?,?,?,?,?)",
+        image, id, "#FFFFFF", imageKey, imageKey);
+    db.exec("UPDATE SanPham SET DuongDanMatNaVungThayDo=? WHERE MaSanPham=?", "catalog-processing/products/test/lifecycle.png", id);
+    call("GET", "/catalog/images/" + image + "/content", null, null, 404);
+    call("POST", path + "/publish", admin, Map.of(), 200);
+    assertEquals("TAM_NGUNG", call("DELETE", path, admin, null, 200).get("status"));
+    assertEquals("TAM_NGUNG", call("DELETE", path, admin, null, 200).get("status"));
+    assertEquals("TAM_NGUNG", call("PUT", path, admin, body, 200).get("status"));
+    call("GET", "/catalog/products/" + id, null, null, 404);
+    var request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/v1" + path + "/images/" + image + "/content"))
+        .header("Authorization", "Bearer " + admin).GET().build();
+    assertEquals(200, http.send(request, HttpResponse.BodyHandlers.discarding()).statusCode());
+    String adminId = Db.text(db.one("SELECT MaNguoiDung FROM NguoiDung WHERE TenDangNhap='admintest'"), "MaNguoiDung");
+    String operationId = Db.id("PA");
+    db.runtime().put("operations", operationId, RuntimeState.row("OperationId", operationId,
+        "OwnerId", adminId, "ResourceId", id, "KindName", "PRODUCT_ANALYSIS",
+        "StateName", "QUEUED", "JobId", "catalogCancelled", "Payload", "{\"productAssetIds\":[]}",
+        "NextAttemptAt", 0L, "Attempts", 0, "CreatedAt", System.currentTimeMillis()));
+    ai.processDue();
+    assertEquals("CANCELLED", call("GET", path + "/analysis", admin, null, 200).get("status"));
+    assertEquals("TAM_NGUNG", call("GET", path, admin, null, 200).get("status"));
+    assertEquals(id, call("POST", path + "/publish", admin, Map.of(), 200).get("productId"));
+    call("GET", "/catalog/products/" + id, null, null, 200);
+    assertEquals(2L, ((Number) db.one("SELECT SoLuongTonKho FROM BienTheSanPham WHERE MaBienThe=?", variantId).get("SoLuongTonKho")).longValue());
+  }
+
   /** Retry một phiếu nhập kho không làm tăng tồn hai lần, body khác cùng key bị từ chối. */
   @Test
   @Order(19)
@@ -1197,19 +1276,52 @@ class BackendIntegrationTest {
     long before = db.count("SELECT SoLuongTonKho FROM BienTheSanPham WHERE MaBienThe=?", bottom);
     var body = Map.of("variantId", bottom, "delta", 2, "reason", "Kiểm tra retry phiếu kho");
     var first =
-        call("POST", "/staff/inventory/adjustments", warehouse, body, 200, "inventory-retry-key");
+        call("POST", "/staff/inventory/adjustments", admin, body, 200, "inventory-retry-key");
     var second =
-        call("POST", "/staff/inventory/adjustments", warehouse, body, 200, "inventory-retry-key");
+        call("POST", "/staff/inventory/adjustments", admin, body, 200, "inventory-retry-key");
     assertEquals(first.get("movementId"), second.get("movementId"));
     assertEquals(
         before + 2, db.count("SELECT SoLuongTonKho FROM BienTheSanPham WHERE MaBienThe=?", bottom));
     call(
         "POST",
         "/staff/inventory/adjustments",
-        warehouse,
+        admin,
         Map.of("variantId", bottom, "delta", 3, "reason", "Kiểm tra retry phiếu kho"),
         409,
         "inventory-retry-key");
+  }
+
+  @Test
+  @Order(60)
+  void inventoryAuditAndUnpaidHold() {
+    long book = db.count("SELECT SoLuongTonKho FROM BienTheSanPham WHERE MaBienThe=?", bottom);
+    long revision = db.count("SELECT COUNT(*) FROM BienDongKho WHERE MaBienThe=?", bottom);
+    var draft = Map.of("reason", "Kiểm kê test", "lines",
+        List.of(Map.of("variantId", bottom, "book", book, "counted", book + 1, "revision", revision)));
+    String path = "/staff/inventory/audits";
+    String first = call("POST", path, warehouse, draft, 200).get("id").toString();
+    String stale = call("POST", path, warehouse, draft, 200).get("id").toString();
+    assertEquals(book, db.count("SELECT SoLuongTonKho FROM BienTheSanPham WHERE MaBienThe=?", bottom));
+    call("POST", path + "/" + first + "/approve", warehouse, Map.of(), 403);
+    call("POST", path + "/" + first + "/approve", admin, Map.of(), 200);
+    call("POST", path + "/" + first + "/approve", admin, Map.of(), 200);
+    call("POST", path + "/" + stale + "/approve", admin, Map.of(), 409);
+    call("POST", path + "/" + stale + "/reject", admin, Map.of(), 200);
+    assertEquals(book + 1, db.count("SELECT SoLuongTonKho FROM BienTheSanPham WHERE MaBienThe=?", bottom));
+
+    String id = call("POST", "/orders", customer, Map.of("addressId", address,
+        "paymentMethod", "VIETQR", "items", List.of(Map.of("variantId", bottom, "quantity", 1))),
+        201, "unpaid-expiry-stock").get("orderId").toString();
+    call("POST", "/staff/orders/" + id + "/pack", warehouse, Map.of(), 409);
+    call("POST", "/admin/orders/" + id + "/confirm-payment", customer,
+        Map.of("transactionRef", "BANK-TEST"), 403);
+    db.exec("UPDATE DonHang SET NgayTao=CURRENT_TIMESTAMP - INTERVAL 16 MINUTE WHERE MaDonHang=?", id);
+    call("POST", "/admin/orders/" + id + "/confirm-payment", admin,
+        Map.of("transactionRef", "BANK-TEST"), 409);
+    orderService.expirePayment(id);
+    orderService.expirePayment(id);
+    assertEquals(book + 1, db.count("SELECT SoLuongTonKho FROM BienTheSanPham WHERE MaBienThe=?", bottom));
+    assertEquals("DA_HUY", call("GET", "/orders/" + id, customer, null, 200).get("status"));
   }
   /** Bộ lọc/nhãn tiếng Việt và tra cứu staff kiểm tra trên MySQL thật. */
   @Test @Order(20) @SuppressWarnings("unchecked") void filtersAndStaffLookups() {

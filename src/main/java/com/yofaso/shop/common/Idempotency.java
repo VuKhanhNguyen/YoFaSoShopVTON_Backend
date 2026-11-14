@@ -53,6 +53,12 @@ public class Idempotency {
       if (scope.equals("ORDER") || scope.equals("POS_ORDER")) {
         return db.count("SELECT COUNT(*) FROM DonHang WHERE MaDonHang=?", id) > 0 ? id : null;
       }
+      if (scope.equals("PRODUCT_CREATE")) {
+        return db.count("SELECT COUNT(*) FROM SanPham WHERE MaSanPham=?", id) > 0 ? id : null;
+      }
+      if (scope.equals("VARIANT_CREATE")) {
+        return db.count("SELECT COUNT(*) FROM BienTheSanPham WHERE MaBienThe=?", id) > 0 ? id : null;
+      }
       if (scope.equals("INVENTORY_ADJUST")) {
         return db.count("SELECT COUNT(*) FROM BienDongKho WHERE MaBienDong=?", id) > 0 ? id : null;
       }

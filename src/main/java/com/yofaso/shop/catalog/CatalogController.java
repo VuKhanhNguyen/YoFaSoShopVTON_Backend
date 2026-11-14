@@ -44,7 +44,7 @@ public class CatalogController {
       @NotNull @Pattern(regexp = "XS|S|M|L|XL|XXL|FREESIZE") String size,
       @NotBlank @Size(max = 100) String colorName,
       @NotNull @Pattern(regexp = "#[0-9A-Fa-f]{6}(,#[0-9A-Fa-f]{6}){0,8}") String colors,
-      @NotNull @DecimalMin("0") @Digits(integer = 10, fraction = 2) BigDecimal price,
+      @NotNull @DecimalMin(value = "0", inclusive = false) @Digits(integer = 10, fraction = 2) BigDecimal price,
       @DecimalMin("0") @Digits(integer = 10, fraction = 2) BigDecimal salePrice,
       @Size(max = 50) String shelf,
       @NotNull @Pattern(regexp = "DANG_BAN|HET_HANG|NGUNG_BAN") String status,
@@ -71,11 +71,13 @@ public class CatalogController {
 
   private final Db db;
   private final CatalogService service;
+  private final Idempotency keys;
 
   /** Nhận service catalog và DB danh mục. */
-  public CatalogController(Db db, CatalogService service) {
+  public CatalogController(Db db, CatalogService service, Idempotency keys) {
     this.db = db;
     this.service = service;
+    this.keys = keys;
   }
 
   /** Danh mục hiển thị cho khách vãng lai. */
@@ -202,12 +204,18 @@ public class CatalogController {
   @PostMapping("/admin/products")
   @PreAuthorize("hasRole('SHOP_ADMIN')")
   @ResponseStatus(org.springframework.http.HttpStatus.CREATED)
-  public Map<String, Object> create(@Valid @RequestBody Product b, Authentication a) {
-    String id = service.save(null, b, a.getName());
+  @Transactional
+  public Map<String, Object> create(@Valid @RequestBody Product b, Authentication a,
+      @RequestHeader(value = "Idempotency-Key", required = false) String key) {
+    String id = key == null ? null : keys.existing(a.getName(), "PRODUCT_CREATE", key, b);
+    if (id == null) {
+      id = service.save(null, b, a.getName());
+      if (key != null) keys.complete(a.getName(), "PRODUCT_CREATE", key, id);
+    }
     return service.detail(id, true);
   }
 
-  /** Sửa metadata sẽ đưa sản phẩm về nháp để duyệt lại. */
+  /** Sửa metadata và giữ trạng thái bán hiện tại. */
   @PutMapping("/admin/products/{id}")
   @PreAuthorize("hasRole('SHOP_ADMIN')")
   public Map<String, Object> update(
@@ -225,14 +233,15 @@ public class CatalogController {
 
   /** Ngừng kinh doanh, không xóa lịch sử mua hàng. */
   @DeleteMapping("/admin/products/{id}")
+  @Transactional
   @PreAuthorize("hasRole('SHOP_ADMIN')")
-  public Map<String, Object> archive(@PathVariable String id) {
-    Problem.require(
-        db.exec("UPDATE SanPham SET TrangThaiSanPham='TAM_NGUNG' WHERE MaSanPham=?", id) == 1,
-        404,
-        "NOT_FOUND",
-        "Không có sản phẩm.");
-    return Map.of("archived", true);
+  public Map<String, Object> archive(@PathVariable String id, Authentication a) {
+    var product = db.one("SELECT TrangThaiSanPham FROM SanPham WHERE MaSanPham=? FOR UPDATE", id);
+    if (!"TAM_NGUNG".equals(product.get("TrangThaiSanPham"))) {
+      db.exec("UPDATE SanPham SET TrangThaiSanPham='TAM_NGUNG' WHERE MaSanPham=?", id);
+      db.audit(a.getName(), "PRODUCT_ARCHIVE", id);
+    }
+    return Map.of("archived", true, "status", "TAM_NGUNG");
   }
 
   /** Thêm SKU, tồn ban đầu bằng 0. */
@@ -241,8 +250,15 @@ public class CatalogController {
   @PreAuthorize("hasRole('SHOP_ADMIN')")
   @ResponseStatus(org.springframework.http.HttpStatus.CREATED)
   public Map<String, Object> variant(
-      @PathVariable String id, @Valid @RequestBody Variant b, Authentication a) {
-    return Map.of("variantId", service.variant(id, null, b, a.getName()));
+      @PathVariable String id, @Valid @RequestBody Variant b, Authentication a,
+      @RequestHeader(value = "Idempotency-Key", required = false) String key) {
+    String variantId = key == null ? null
+        : keys.existing(a.getName(), "VARIANT_CREATE", key, List.of(id, b));
+    if (variantId == null) {
+      variantId = service.variant(id, null, b, a.getName());
+      if (key != null) keys.complete(a.getName(), "VARIANT_CREATE", key, variantId);
+    }
+    return Map.of("variantId", variantId);
   }
 
   /** Sửa giá/màu/size/tồn SKU. */

@@ -124,19 +124,20 @@ public class AiService {
     body.put("productAssetIds", b.productAssetIds());
     body.put("referenceAssetIds", b.referenceAssetIds());
     insert(id, owner, "PRODUCT_ANALYSIS", product, body);
-    db.exec("UPDATE SanPham SET TrangThaiSanPham='DANG_XU_LY_AI' WHERE MaSanPham=?", product);
+    db.exec("UPDATE SanPham SET TrangThaiSanPham='DANG_XU_LY_AI' WHERE MaSanPham=? AND TrangThaiSanPham='BAN_NHAP'", product);
     keys.complete(owner, "ANALYSIS", key, id);
     return operation(id, owner);
   }
 
   /** Ghi manifest trước khi gọi mạng; rollback SQL gỡ operation, poll đối chiếu nghiệp vụ. */
   private void insert(String id, String owner, String kind, String resource, Object payload) {
-    db.runtime().put("operations", id, RuntimeState.row("OperationId",id,"OwnerId",owner,"KindName",kind,"ResourceId",resource,"Payload",json.writeValueAsString(payload),"StateName","PENDING_SUBMIT","Attempts",0,"CreatedAt",System.currentTimeMillis(),"NextAttemptAt",0L,"Simulated",true));
+    db.runtime().put("operations", id, RuntimeState.row("OperationId",id,"OwnerId",owner,"KindName",kind,"ResourceId",resource,"Payload",json.writeValueAsString(payload),"StateName","PENDING_SUBMIT","Attempts",0,"CreatedAt",System.currentTimeMillis(),"NextAttemptAt",0L,"Simulated",true,"AwaitingCommit",org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()));
     if(org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive())
       org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
         new org.springframework.transaction.support.TransactionSynchronization() {
           @Override public void afterCompletion(int status) {
-            if(status==STATUS_ROLLED_BACK) db.runtime().remove("operations",id);
+            if (status == STATUS_COMMITTED) db.runtime().patch("operations", id, "AwaitingCommit", false);
+            else db.runtime().remove("operations", id);
           }
         });
   }
@@ -148,6 +149,14 @@ public class AiService {
     if (row.get("result") != null)
       row.put("result", json.readValue(row.get("result").toString(), Object.class));
     return row;
+  }
+
+  public Map<String, Object> latestAnalysis(String product, String owner) {
+    db.one("SELECT MaSanPham FROM SanPham WHERE MaSanPham=?", product);
+    return db.runtime().find("operations", op -> product.equals(op.get("ResourceId"))
+            && owner.equals(op.get("OwnerId")) && "PRODUCT_ANALYSIS".equals(op.get("KindName")))
+        .stream().max(Comparator.comparingLong(op -> ((Number) op.get("CreatedAt")).longValue()))
+        .map(op -> operation(Db.text(op, "OperationId"), owner)).orElseGet(Map::of);
   }
 
   private Map<String,Object> ownedOperation(String id, String owner) {
@@ -174,7 +183,7 @@ public class AiService {
         db.runtime().find("operations", r -> Set.of("PENDING_SUBMIT","QUEUED","PROCESSING","RECONCILING").contains(r.get("StateName")) && ((Number)r.get("NextAttemptAt")).longValue() <= System.currentTimeMillis()).stream().limit(5).toList()) {
       try {
         if ("TRY_ON".equals(op.get("KindName")) && db.count("SELECT COUNT(*) FROM PhienThuDoAo WHERE MaPhienThuDo=?",op.get("ResourceId"))==0) continue;
-        if ("PRODUCT_ANALYSIS".equals(op.get("KindName")) && "PENDING_SUBMIT".equals(op.get("StateName")) && db.count("SELECT COUNT(*) FROM SanPham WHERE MaSanPham=? AND TrangThaiSanPham='DANG_XU_LY_AI'",op.get("ResourceId"))==0) continue;
+        if ("PRODUCT_ANALYSIS".equals(op.get("KindName")) && Boolean.TRUE.equals(op.get("AwaitingCommit"))) continue;
         process(op);
       } catch (Problem e) {
         failure(op, e);
@@ -297,7 +306,7 @@ public class AiService {
           analyzed.sort(Comparator.comparingInt(v -> inputs.indexOf(v.get("sourceAssetId"))));
           Problem.require(analyzed.size()==inputs.size() && analyzed.stream().map(v -> v.get("sourceAssetId")).distinct().count()==inputs.size()
               && analyzed.stream().allMatch(v -> inputs.contains(v.get("sourceAssetId"))),502,"AI_RESPONSE_INVALID","Kết quả phải khớp mọi ảnh nguồn.");
-          String storageCode = resolveStorageCode(op.get("ResourceId").toString());
+          String storageCode = op.get("ResourceId").toString().toLowerCase(Locale.ROOT) + "-" + id.toLowerCase(Locale.ROOT);
           for (int index=0;index<analyzed.size();index++) {
             var item=analyzed.get(index);
             item.put("originalKey",media.publishCatalog(storageCode,index+1,"original",item.get("sourceAssetId").toString()));
@@ -316,9 +325,7 @@ public class AiService {
             }
           } catch (Exception ignored) {}
         }
-        db.exec(
-            "UPDATE SanPham SET TrangThaiSanPham='BAN_NHAP' WHERE MaSanPham=?",
-            op.get("ResourceId"));
+        finishProductAnalysis(op);
       }
       result = converted;
     } else if (kind.equals("TRY_ON")) {
@@ -330,8 +337,7 @@ public class AiService {
           id);
     }
     if (kind.equals("PRODUCT_ANALYSIS") && Set.of("FAILED", "CANCELLED").contains(status))
-      db.exec(
-          "UPDATE SanPham SET TrangThaiSanPham='BAN_NHAP' WHERE MaSanPham=?", op.get("ResourceId"));
+      finishProductAnalysis(op);
     if (kind.equals("TRY_ON") && Set.of("FAILED","CANCELLED").contains(status))
       db.exec("UPDATE PhienThuDoAo SET ThongBaoLoi=?,ThoiGianHoanTat=CURRENT_TIMESTAMP WHERE MaPhienThuDo=?",status,id);
     Object errorCode =
@@ -352,6 +358,11 @@ public class AiService {
     return remote;
   }
 
+  private void finishProductAnalysis(Map<String, Object> operation) {
+    db.exec("UPDATE SanPham SET TrangThaiSanPham='BAN_NHAP' WHERE MaSanPham=? AND TrangThaiSanPham='DANG_XU_LY_AI'",
+        operation.get("ResourceId"));
+  }
+
   /** Lỗi mạng giữ trạng thái đối soát, không nói job GPU đã hủy/thất bại. */
   private void failure(Map<String, Object> op, Problem e) {
     int attempts = ((Number) op.get("Attempts")).intValue() + 1;
@@ -363,10 +374,7 @@ public class AiService {
             "UPDATE PhienThuDoAo SET TrangThaiPhien='THAT_BAI',ThongBaoLoi=? WHERE MaPhienThuDo=?",
             e.code,
             op.get("OperationId"));
-      else
-        db.exec(
-            "UPDATE SanPham SET TrangThaiSanPham='BAN_NHAP' WHERE MaSanPham=?",
-            op.get("ResourceId"));
+      else finishProductAnalysis(op);
     }
     db.runtime().patch("operations", op.get("OperationId"), "StateName", state, "Attempts", attempts, "LastError", e.code, "NextAttemptAt", Timestamp.from(Instant.now().plusSeconds(Math.min(300, 1L << Math.min(attempts, 8)))).getTime());
   }
@@ -388,6 +396,8 @@ public class AiService {
           "UPDATE PhienThuDoAo SET TrangThaiPhien='THAT_BAI',ThongBaoLoi='Đã hủy khi còn chờ' WHERE"
               + " MaPhienThuDo=?",
           id);
+    if ("PRODUCT_ANALYSIS".equals(op.get("KindName")) && "CANCELLED".equals(result.get("status")))
+      finishProductAnalysis(op);
     return operation(id, owner);
   }
 
@@ -401,31 +411,4 @@ public class AiService {
     };
   }
 
-  /**
-   * Sinh mã lưu trữ slug cố định trên Cloudflare R2:
-   * Giữ nguyên slug nếu đã có ảnh trước đó; nếu mới thì sinh từ Tên sản phẩm + Tiền tố danh mục Nam (m-) / Nữ (w-).
-   */
-  public String resolveStorageCode(String productId) {
-    if (productId == null || productId.isBlank()) return "product";
-    var p = db.rows("SELECT TenSanPham, MaDanhMuc, DuongDanMatNaVungThayDo FROM SanPham WHERE MaSanPham=?", productId);
-    if (p.isEmpty()) return productId;
-    var row = p.getFirst();
-    String currentMask = Objects.toString(row.get("DuongDanMatNaVungThayDo"), "");
-    var matcher = java.util.regex.Pattern.compile("(?:catalog|catalog-processing)/products/([^/]+)/.*").matcher(currentMask);
-    if (matcher.matches()) {
-      return matcher.group(1);
-    }
-    String name = Objects.toString(row.get("TenSanPham"), "");
-    String cat = Objects.toString(row.get("MaDanhMuc"), "");
-    boolean isFemale = cat.matches("DM00000[2567]|DM0000(19|2[0-9]|3[0-2])");
-    boolean isMale = !isFemale && cat.matches("DM00000[134]|DM0000(08|09|1[0-8])");
-    String prefix = isFemale ? "w-" : isMale ? "m-" : "";
-    if (name.isBlank()) return prefix + productId.toLowerCase();
-    String normalized = java.text.Normalizer.normalize(name, java.text.Normalizer.Form.NFD)
-        .replaceAll("\\p{M}", "")
-        .replace("đ", "d").replace("Đ", "d")
-        .toLowerCase();
-    String slug = normalized.replaceAll("[^a-z0-9]+", "-").replaceAll("^-+|-+$", "");
-    return prefix + (slug.isBlank() ? productId.toLowerCase() : slug);
-  }
 }

@@ -30,8 +30,8 @@ spring:
       mode: never
   servlet:
     multipart:
-      max-file-size: 50MB
-      max-request-size: 55MB
+      max-file-size: 60MB
+      max-request-size: 65MB
   jackson:
     time-zone: "Asia/Ho_Chi_Minh"
     locale: "vi_VN"
@@ -62,8 +62,8 @@ app:
   ai:
     base-url: ${AI_SERVICE_BASE_URL:http://127.0.0.1:8000}
     key: ${AI_INTERNAL_API_KEY:}
-    connect-timeout-seconds: ${AI_CONNECT_TIMEOUT_SECONDS:5}
-    read-timeout-seconds: ${AI_SUBMIT_TIMEOUT_SECONDS:15}
+    connect-timeout-seconds: ${AI_CONNECT_TIMEOUT_SECONDS:15}
+    read-timeout-seconds: ${AI_SUBMIT_TIMEOUT_SECONDS:180}
     poll-ms: ${AI_POLL_INTERVAL_MS:3000}
     enabled: ${AI_POLL_ENABLED:true}
   bootstrap:

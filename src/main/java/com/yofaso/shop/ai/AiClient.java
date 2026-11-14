@@ -17,6 +17,7 @@ import org.springframework.web.client.*;
 /** Client nội bộ: URL/key từ cấu hình, không nhận host/path/URL do người dùng đưa. */
 @Component
 public class AiClient {
+  private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(AiClient.class);
   private final RestClient client;
   private final String key;
 
@@ -85,6 +86,56 @@ public class AiClient {
     }
   }
 
+  /** Nhận diện màu sắc và phân loại VTON bằng AI model ngay khi upload ảnh sản phẩm. */
+  @SuppressWarnings("unchecked")
+  public Map<String, Object> analyzeGarmentColor(byte[] imageBytes) {
+    configured();
+    var parts = new LinkedMultiValueMap<String, Object>();
+    parts.add(
+        "file",
+        new ByteArrayResource(imageBytes) {
+          @Override
+          public String getFilename() {
+            return "garment.png";
+          }
+        });
+    try {
+      return client
+          .post()
+          .uri("/internal/v1/garments/analyze-color")
+          .contentType(MediaType.MULTIPART_FORM_DATA)
+          .body(parts)
+          .retrieve()
+          .body(Map.class);
+    } catch (Exception e) {
+      return Map.of();
+    }
+  }
+
+  /** Bóc tách nền và tạo Agnostic Mask realtime bằng YOLOv8s-seg + SAM 2 trên GPU. */
+  @SuppressWarnings("unchecked")
+  public Map<String, Object> segmentGarmentRealtime(
+      String garmentRemoteId, String referenceRemoteId, String category, String subtype) {
+    configured();
+    var parts = new LinkedMultiValueMap<String, Object>();
+    if (garmentRemoteId != null && !garmentRemoteId.isBlank()) parts.add("garment_asset_id", garmentRemoteId);
+    if (referenceRemoteId != null && !referenceRemoteId.isBlank()) parts.add("reference_asset_id", referenceRemoteId);
+    if (category != null && !category.isBlank()) parts.add("category", category);
+    if (subtype != null && !subtype.isBlank()) parts.add("subtype", subtype);
+    try {
+      return client
+          .post()
+          .uri("/internal/v1/garments/segment-realtime")
+          .contentType(MediaType.MULTIPART_FORM_DATA)
+          .body(parts)
+          .retrieve()
+          .body(Map.class);
+    } catch (Exception e) {
+      log.error("AI Service segmentGarmentRealtime failed: {}", e.getMessage(), e);
+      return Map.of();
+    }
+  }
+
   /** Poll/tìm lại job bằng ID nghiệp vụ khi submit bị timeout. */
   @SuppressWarnings("unchecked")
   public Map<String, Object> get(String path) {
@@ -134,9 +185,9 @@ public class AiClient {
               (q, r) -> {
                 if (!r.getStatusCode().is2xxSuccessful())
                   throw new Problem(502, "AI_ASSET_UNAVAILABLE", "Không tải được kết quả AI.");
-                byte[] bytes = r.getBody().readNBytes(20 * 1024 * 1024 + 1);
+                byte[] bytes = r.getBody().readNBytes(65 * 1024 * 1024 + 1);
                 Problem.require(
-                    bytes.length <= 20 * 1024 * 1024,
+                    bytes.length <= 65 * 1024 * 1024,
                     502,
                     "AI_RESPONSE_TOO_LARGE",
                     "Ảnh AI vượt giới hạn.");

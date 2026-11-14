@@ -1,6 +1,8 @@
 package com.yofaso.shop.catalog;
 
+import com.yofaso.shop.ai.MediaService;
 import com.yofaso.shop.common.*;
+import com.yofaso.shop.order.InventoryService;
 import java.math.BigDecimal;
 import java.util.*;
 import org.springframework.stereotype.Service;
@@ -20,10 +22,14 @@ public class CatalogService {
           + " salePrice,SoLuongTonKho AS stock,ViTriGiaKe AS shelf,TrangThai AS status FROM"
           + " BienTheSanPham";
   private final Db db;
+  private final InventoryService inventory;
+  private final MediaService media;
 
-  /** Nhận repository SQL dùng schema có sẵn. */
-  public CatalogService(Db db) {
+  /** Nhận repository SQL, kho single pool và storage ảnh. */
+  public CatalogService(Db db, InventoryService inventory, MediaService media) {
     this.db = db;
+    this.inventory = inventory;
+    this.media = media;
   }
 
   /** Danh sách công khai chỉ gồm sản phẩm đang bán, lọc SKU bằng EXISTS tránh trùng hàng. */
@@ -54,7 +60,7 @@ public class CatalogService {
         && min.signum()>=0 && max.compareTo(min)>=0,400,"FILTER_INVALID","Bộ lọc hoặc khoảng giá không hợp lệ.");
     Problem.require(fit.isEmpty() || Set.of("OM_SAT","SUONG_VUA","RONG_OVERSIZE").contains(fit),400,"FILTER_INVALID","Kiểu dáng không hợp lệ.");
     Problem.require(pattern.isEmpty() || Set.of("VAI_TRON","HOA_VAN_NHO","HOA_TO_BAN","KE_SOC_TAM","KE_CARO","IN_HINH").contains(pattern),400,"FILTER_INVALID","Họa tiết không hợp lệ.");
-    Problem.require(status.isEmpty() || Set.of("BAN_NHAP","DANG_XU_LY_AI","DANG_KINH_DOANH","NGUNG_KINH_DOANH").contains(status),400,"FILTER_INVALID","Trạng thái không hợp lệ.");
+    Problem.require(status.isEmpty() || Set.of("BAN_NHAP","DANG_XU_LY_AI","DANG_KINH_DOANH","TAM_NGUNG","NGUNG_KINH_DOANH").contains(status),400,"FILTER_INVALID","Trạng thái không hợp lệ.");
     Problem.require(vtonCategory == null || vtonCategory.isEmpty() || Set.of("upper_body","lower_body","dress").contains(vtonCategory),400,"FILTER_INVALID","Phân loại VTON không hợp lệ.");
     Problem.require(gender == null || gender.isEmpty() || Set.of("NAM","NU").contains(gender),400,"FILTER_INVALID","Giới tính không hợp lệ.");
 
@@ -181,7 +187,20 @@ public class CatalogService {
             id);
     var variants = db.rows(VARIANT + " WHERE MaSanPham=?" + (admin ? "" : " AND TrangThai<>'NGUNG_BAN'"), id);
     p.put("variants", variants);
-    p.put("images", images(id));
+    var imgs = images(id);
+    if (admin) {
+      var meta = db.one("SELECT BangMauTrichXuat,DuongDanMatNaVungThayDo FROM SanPham WHERE MaSanPham=?", id);
+      p.put("extractedPalette", meta.get("BangMauTrichXuat"));
+      String maskPath = Db.text(meta, "DuongDanMatNaVungThayDo");
+      p.put("maskPath", maskPath.isEmpty() ? null : maskPath);
+      p.put("maskUrl", maskPath.isEmpty() ? null : "/api/v1/admin/products/" + id + "/mask/content");
+      for (var img : imgs) {
+        String imgBase = "/api/v1/admin/products/" + id + "/images/" + img.get("imageId") + "/content?kind=";
+        img.put("adminOriginalUrl", imgBase + "original");
+        img.put("adminCutoutUrl", img.get("cutoutAssetId") == null ? null : imgBase + "cutout");
+      }
+    }
+    p.put("images", imgs);
 
     var ratingRows = db.rows("SELECT ROUND(AVG(SoSao), 1) AS avgRating, COUNT(MaDanhGia) AS reviewCount FROM DanhGiaSanPham WHERE MaSanPham=? AND TrangThaiDuyet='DA_HIEN_THI'", id);
     if (!ratingRows.isEmpty() && ratingRows.getFirst().get("avgRating") != null) {
@@ -228,6 +247,8 @@ public class CatalogService {
       String base = "/api/v1/catalog/images/" + image.get("imageId") + "/content?kind=";
       image.put("originalUrl", base + "original");
       image.put("cutoutUrl", image.get("cutoutAssetId") == null ? null : base + "cutout");
+      String orig = (String) image.get("originalAssetId");
+      image.put("role", (orig != null && orig.contains("--ref")) ? "reference" : "garment");
     }
     return rows;
   }
@@ -246,23 +267,215 @@ public class CatalogService {
           id,
           b.categoryId(),
           b.name());
+    String targetStatus = (b.status() != null && !b.status().isBlank()) ? b.status() : "BAN_NHAP";
     db.exec(
         "UPDATE SanPham SET"
-            + " MaDanhMuc=?,TenSanPham=?,MoTaChiTiet=?,ChatLieu=?,KieuDang=?,LoaiCapQuan=?,ChieuDaiTrangPhuc=?,LoaiHoaTiet=?,PhanLoaiVTON=?,TieuLoaiTrangPhuc=?,TrangThaiSanPham='BAN_NHAP'"
+            + " MaDanhMuc=?,TenSanPham=?,MoTaChiTiet=?,ChatLieu=?,KieuDang=?,LoaiCapQuan=?,ChieuDaiTrangPhuc=?,LoaiHoaTiet=?,PhanLoaiVTON=?,TieuLoaiTrangPhuc=?,TrangThaiSanPham=?"
+            + (b.extractedPalette() != null ? ",BangMauTrichXuat=?" : "")
             + " WHERE MaSanPham=?",
-        b.categoryId(),
-        b.name(),
-        b.description(),
-        b.material(),
-        b.fit(),
-        b.waist(),
-        b.length(),
-        b.pattern(),
-        b.vtonCategory(),
-        b.subtype(),
-        id);
+        b.extractedPalette() != null
+            ? new Object[] {
+                b.categoryId(),
+                b.name(),
+                b.description(),
+                b.material(),
+                b.fit(),
+                b.waist(),
+                b.length(),
+                b.pattern(),
+                b.vtonCategory(),
+                b.subtype(),
+                targetStatus,
+                b.extractedPalette(),
+                id
+              }
+            : new Object[] {
+                b.categoryId(),
+                b.name(),
+                b.description(),
+                b.material(),
+                b.fit(),
+                b.waist(),
+                b.length(),
+                b.pattern(),
+                b.vtonCategory(),
+                b.subtype(),
+                targetStatus,
+                id
+              });
     db.audit(actor, create ? "PRODUCT_CREATE" : "PRODUCT_UPDATE", id);
     return id;
+  }
+
+  /** Cập nhật nhanh phân loại VTON và tiểu loại DeepFashion2 từ AI Inspector. */
+  @Transactional
+  public Map<String, Object> updateVton(
+      String id, String vtonCategory, String subtype, String actor) {
+    db.one("SELECT MaSanPham FROM SanPham WHERE MaSanPham=? FOR UPDATE", id);
+    if (subtype != null && !subtype.isBlank()) {
+      db.exec(
+          "UPDATE SanPham SET PhanLoaiVTON=?,TieuLoaiTrangPhuc=? WHERE MaSanPham=?",
+          vtonCategory,
+          subtype,
+          id);
+    } else {
+      db.exec("UPDATE SanPham SET PhanLoaiVTON=? WHERE MaSanPham=?", vtonCategory, id);
+    }
+    db.audit(actor, "PRODUCT_VTON_UPDATE", id);
+    return detail(id, true);
+  }
+
+  private String buildProductStorageCode(String productId, String productName, String categoryId) {
+    if (productName == null || productName.isBlank()) return productId.toLowerCase();
+    String prefix = "u-";
+    try {
+      var cat = db.one("SELECT MaDanhMuc, MaDanhMucCha FROM DanhMuc WHERE MaDanhMuc=?", categoryId);
+      String parent = Db.text(cat, "MaDanhMucCha");
+      if ("DM000001".equals(categoryId) || "DM000001".equals(parent)) {
+        prefix = "m-";
+      } else if ("DM000002".equals(categoryId) || "DM000002".equals(parent)) {
+        prefix = "w-";
+      } else if (parent != null && !parent.isBlank()) {
+        var root = db.one("SELECT MaDanhMucCha FROM DanhMuc WHERE MaDanhMuc=?", parent);
+        String rootParent = Db.text(root, "MaDanhMucCha");
+        if ("DM000001".equals(rootParent) || "DM000001".equals(parent)) {
+          prefix = "m-";
+        } else if ("DM000002".equals(rootParent) || "DM000002".equals(parent)) {
+          prefix = "w-";
+        }
+      }
+    } catch (Exception ignored) {}
+
+    String normalized = java.text.Normalizer.normalize(productName, java.text.Normalizer.Form.NFD)
+        .replaceAll("\\p{M}", "")
+        .replaceAll("[đĐ]", "d")
+        .replaceAll("[^a-zA-Z0-9]+", "-")
+        .replaceAll("^-+|-+$", "");
+    if (normalized.length() > 50) normalized = normalized.substring(0, 50);
+    return prefix + normalized;
+  }
+
+  /** Đồng bộ ảnh sản phẩm theo nhóm màu, tải lên Cloudflare R2 public & private theo chuẩn thiết kế. */
+  @Transactional
+  public List<Map<String, Object>> saveImages(
+      String productId, CatalogController.ProductImages body, String actor) {
+    db.one("SELECT MaSanPham FROM SanPham WHERE MaSanPham=? FOR UPDATE", productId);
+    if (body.extractedPalette() != null) {
+      db.exec(
+          "UPDATE SanPham SET BangMauTrichXuat=? WHERE MaSanPham=?",
+          body.extractedPalette(),
+          productId);
+    }
+
+    var pRow = db.one("SELECT TenSanPham, MaDanhMuc FROM SanPham WHERE MaSanPham=?", productId);
+    String productStorageCode = buildProductStorageCode(productId, Db.text(pRow, "TenSanPham"), Db.text(pRow, "MaDanhMuc"));
+
+    // Đồng bộ Mask nếu có maskAssetId
+    if (body.maskAssetId() != null && !body.maskAssetId().isBlank()) {
+      String maskAsset = body.maskAssetId();
+      if (maskAsset.matches("[a-f0-9-]{32,36}")) {
+        try {
+          String r2Mask = media.publishCatalog(productStorageCode, 1, "mask", maskAsset);
+          db.exec("UPDATE SanPham SET DuongDanMatNaVungThayDo=? WHERE MaSanPham=?", r2Mask, productId);
+        } catch (Exception e) {
+          db.exec("UPDATE SanPham SET DuongDanMatNaVungThayDo=? WHERE MaSanPham=?", "media/assets/" + maskAsset + ".png", productId);
+        }
+      } else if (maskAsset.startsWith("catalog-processing/")) {
+        db.exec("UPDATE SanPham SET DuongDanMatNaVungThayDo=? WHERE MaSanPham=?", maskAsset, productId);
+      }
+    }
+
+    var existingRows = db.rows(
+        "SELECT MaHinhAnh,DuongDanAnhGoc FROM HinhAnhSanPham WHERE MaSanPham=?", productId);
+    Set<String> keepIds = new HashSet<>();
+
+    int refIdx = 0;
+    int garmentIdx = 0;
+
+    for (var item : body.images()) {
+      boolean isRef = "reference".equalsIgnoreCase(item.role())
+          || (item.assetId() != null && item.assetId().contains("--ref"))
+          || (item.position() <= 2 && (item.cutoutAssetId() == null || item.cutoutAssetId().isBlank()) && item.cover());
+
+      if (isRef) {
+        refIdx++;
+      } else {
+        garmentIdx++;
+      }
+
+      int filePos = isRef ? refIdx : garmentIdx;
+      String finalOriginal = item.assetId();
+      String finalCutout = item.cutoutAssetId();
+
+      // Nếu assetId là file tạm local (UUID), tải lên Cloudflare R2
+      if (item.assetId() != null && item.assetId().matches("[a-f0-9-]{32,36}")) {
+        try {
+          if (isRef) {
+            // Ảnh người mẫu: 1 bản public làm original/bìa FE, 1 bản private làm reference cho AI VTON
+            finalOriginal = media.publishCatalog(productStorageCode, filePos, "reference_original", item.assetId());
+            media.publishCatalog(productStorageCode, filePos, "reference", item.assetId());
+          } else {
+            // Ảnh trang phục: public original
+            finalOriginal = media.publishCatalog(productStorageCode, filePos, "original", item.assetId());
+          }
+        } catch (Exception ignored) {}
+      }
+
+      // Nếu cutoutAssetId là file tạm local (UUID), tải lên Cloudflare R2 public
+      if (finalCutout != null && finalCutout.matches("[a-f0-9-]{32,36}")) {
+        try {
+          finalCutout = media.publishCatalog(productStorageCode, filePos, "cutout", finalCutout);
+        } catch (Exception ignored) {}
+      }
+
+      // Mask riêng của từng trang phục (nếu có)
+      if (!isRef && item.maskAssetId() != null && item.maskAssetId().matches("[a-f0-9-]{32,36}")) {
+        try {
+          String r2Mask = media.publishCatalog(productStorageCode, filePos, "mask", item.maskAssetId());
+          if (filePos == 1) {
+            db.exec("UPDATE SanPham SET DuongDanMatNaVungThayDo=? WHERE MaSanPham=?", r2Mask, productId);
+          }
+        } catch (Exception ignored) {}
+      }
+
+      String imgId = item.imageId();
+      int isCover = (isRef && filePos == 1) ? 1 : (item.cover() ? 1 : 0);
+      int displayOrder = item.position() > 0 ? item.position() : (isRef ? filePos : (refIdx + filePos));
+
+      if (imgId != null && !imgId.isBlank()) {
+        keepIds.add(imgId);
+        db.exec(
+            "UPDATE HinhAnhSanPham SET DuongDanAnhGoc=?,DuongDanAnhBocNen=?,MaMauSac=?,LaAnhDaiDien=?,ThuTuHienThi=? WHERE MaHinhAnh=? AND MaSanPham=?",
+            finalOriginal,
+            finalCutout,
+            item.colors(),
+            isCover,
+            displayOrder,
+            imgId,
+            productId);
+      } else {
+        String newId = Db.id("HA");
+        keepIds.add(newId);
+        db.exec(
+            "INSERT INTO HinhAnhSanPham(MaHinhAnh,MaSanPham,DuongDanAnhGoc,DuongDanAnhBocNen,MaMauSac,LaAnhDaiDien,ThuTuHienThi)"
+                + " VALUES(?,?,?,?,?,?,?)",
+            newId,
+            productId,
+            finalOriginal,
+            finalCutout,
+            item.colors(),
+            isCover,
+            displayOrder);
+      }
+    }
+    for (var row : existingRows) {
+      String oldId = row.get("MaHinhAnh").toString();
+      if (!keepIds.contains(oldId)) {
+        db.exec("DELETE FROM HinhAnhSanPham WHERE MaHinhAnh=? AND MaSanPham=?", oldId, productId);
+      }
+    }
+    db.audit(actor, "PRODUCT_IMAGES_SYNC", productId);
+    return images(productId);
   }
 
   /** Công bố chỉ khi có SKU, ảnh sạch đúng SKU và metadata do nhân viên duyệt. */
@@ -272,7 +485,7 @@ public class CatalogService {
     long variants = db.count("SELECT COUNT(*) FROM BienTheSanPham WHERE MaSanPham=?", id);
     long ready =
         db.count(
-            "SELECT COUNT(DISTINCT b.MaBienThe) FROM BienTheSanPham b JOIN SanPham p ON p.MaSanPham=b.MaSanPham JOIN HinhAnhSanPham h ON h.MaSanPham=b.MaSanPham AND h.MaMauSac=b.MaMauSac WHERE b.MaSanPham=? AND h.DuongDanAnhBocNen LIKE 'catalog/products/%' AND p.DuongDanMatNaVungThayDo LIKE 'catalog/products/%'",
+            "SELECT COUNT(DISTINCT b.MaBienThe) FROM BienTheSanPham b JOIN SanPham p ON p.MaSanPham=b.MaSanPham JOIN HinhAnhSanPham h ON h.MaSanPham=b.MaSanPham AND h.MaMauSac=b.MaMauSac WHERE b.MaSanPham=? AND h.DuongDanAnhBocNen LIKE 'catalog/products/%' AND (p.DuongDanMatNaVungThayDo LIKE 'catalog-processing/products/%' OR p.DuongDanMatNaVungThayDo LIKE 'catalog/products/%')",
             id);
     Problem.require(
         variants > 0 && ready == variants,
@@ -284,7 +497,7 @@ public class CatalogService {
     return detail(id, true);
   }
 
-  /** SKU mới tồn bằng 0; thay tồn phải qua ledger kho. */
+  /** SKU mới tồn ban đầu mặc định 0; nếu Admin nhập stock thì ghi nhận qua ledger kho. */
   public String variant(String product, String id, CatalogController.Variant b, String actor) {
     db.one("SELECT MaSanPham FROM SanPham WHERE MaSanPham=?", product);
     Problem.require(
@@ -306,7 +519,11 @@ public class CatalogService {
           b.colors(),
           b.price());
     }
-    db.one("SELECT MaBienThe FROM BienTheSanPham WHERE MaBienThe=? AND MaSanPham=?", id, product);
+    var existing = db.one(
+        "SELECT MaBienThe,SoLuongTonKho FROM BienTheSanPham WHERE MaBienThe=? AND MaSanPham=? FOR UPDATE",
+        id,
+        product);
+    int currentStock = ((Number) existing.get("SoLuongTonKho")).intValue();
     db.exec(
         "UPDATE BienTheSanPham SET"
             + " MaQuanLyHangHoa=?,KichCo=?,TenMau=?,MaMauSac=?,GiaNiemYet=?,GiaKhuyenMai=?,ViTriGiaKe=?,TrangThai=?"
@@ -320,7 +537,44 @@ public class CatalogService {
         b.shelf(),
         b.status(),
         id);
+    if (b.stock() != null && b.stock() != currentStock) {
+      int delta = b.stock() - currentStock;
+      inventory.move(
+          id,
+          delta,
+          delta > 0 ? "NHAP_KHO_BO_SUNG" : "KIEM_KE_CAN_KHO",
+          product,
+          actor,
+          "Cập nhật tồn kho từ quản trị sản phẩm");
+    }
     db.audit(actor, "VARIANT_SAVE", id);
     return id;
+  }
+
+  /** Xóa SKU chưa phát sinh giao dịch hoặc chuyển NGUNG_BAN để bảo toàn lịch sử. */
+  @Transactional
+  public Map<String, Object> deleteVariant(String product, String variantId, String actor) {
+    db.one(
+        "SELECT MaBienThe FROM BienTheSanPham WHERE MaBienThe=? AND MaSanPham=? FOR UPDATE",
+        variantId,
+        product);
+    long refs =
+        db.count("SELECT COUNT(*) FROM ChiTietDonHang WHERE MaBienThe=?", variantId)
+            + db.count("SELECT COUNT(*) FROM PhienThuDoAo WHERE MaBienThe=?", variantId)
+            + db.count("SELECT COUNT(*) FROM GoiYPhoiDo WHERE MaBienTheGoiY=?", variantId)
+            + db.count("SELECT COUNT(*) FROM BienDongKho WHERE MaBienThe=?", variantId);
+    if (refs == 0) {
+      db.exec("DELETE FROM ChiTietGioHang WHERE MaBienThe=?", variantId);
+      db.exec(
+          "DELETE FROM BienTheSanPham WHERE MaBienThe=? AND MaSanPham=?", variantId, product);
+      db.audit(actor, "VARIANT_DELETE", variantId);
+      return Map.of("deleted", true, "discontinued", false);
+    }
+    db.exec(
+        "UPDATE BienTheSanPham SET TrangThai='NGUNG_BAN' WHERE MaBienThe=? AND MaSanPham=?",
+        variantId,
+        product);
+    db.audit(actor, "VARIANT_DISCONTINUE", variantId);
+    return Map.of("deleted", false, "discontinued", true);
   }
 }

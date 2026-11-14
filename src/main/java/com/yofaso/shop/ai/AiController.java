@@ -38,6 +38,12 @@ public class AiController {
       @NotEmpty @Size(max = 8) List<@NotBlank @Size(max = 64) String> productAssetIds,
       @NotNull @Size(max = 8) List<@NotBlank @Size(max = 64) String> referenceAssetIds) {}
 
+  public record SegmentRequest(
+      @NotBlank @Size(max = 64) String garmentAssetId,
+      @Size(max = 64) String referenceAssetId,
+      @Size(max = 64) String vtonCategory,
+      @Size(max = 64) String subtype) {}
+
   public record Binding(
       @NotBlank @Size(max = 20) String variantId, @NotBlank @Size(max = 64) String sourceAssetId) {}
 
@@ -81,7 +87,39 @@ public class AiController {
         403,
         "FORBIDDEN",
         "Chỉ chủ shop tải ảnh catalog.");
-    return media.save(a.getName(), role, file.getBytes(), false);
+    var saved = new LinkedHashMap<String, Object>(media.save(a.getName(), role, file.getBytes(), false));
+    if ("garment".equals(role)) {
+      try {
+        var colorAnalysis = media.detectGarmentColor(file.getBytes());
+        if (colorAnalysis != null && !colorAnalysis.isEmpty()) {
+          var dominant = (Map<?, ?>) colorAnalysis.get("dominantColor");
+          if (dominant != null) {
+            saved.put("colorName", dominant.get("name"));
+            saved.put("dominantHex", dominant.get("hex"));
+          }
+          if (colorAnalysis.containsKey("palette")) {
+            saved.put("palette", colorAnalysis.get("palette"));
+          }
+          if (colorAnalysis.get("vtonCategory") != null) {
+            saved.put("vtonCategory", colorAnalysis.get("vtonCategory"));
+          }
+          if (colorAnalysis.get("subtype") != null) {
+            saved.put("subtype", colorAnalysis.get("subtype"));
+          }
+        }
+      } catch (Exception ignored) {
+        // Giữ assetId cho client, fallback an toàn nếu AI bận
+      }
+    }
+    return saved;
+  }
+
+  /** Nhận diện lại màu sắc và phân loại bằng AI cho ảnh catalog đã lưu. */
+  @PostMapping("/assets/{id}/detect-color")
+  @PreAuthorize("hasRole('SHOP_ADMIN')")
+  public Map<String, Object> detectColor(Authentication a, @PathVariable String id) {
+    media.owned(id, a.getName());
+    return media.detectGarmentColor(media.bytes(id));
   }
 
   /** Tải ảnh cá nhân/kết quả riêng, không trả filesystem path. */
@@ -131,6 +169,33 @@ public class AiController {
         .cacheControl(org.springframework.http.CacheControl.maxAge(7, java.util.concurrent.TimeUnit.DAYS).cachePublic())
         .header("X-Content-Type-Options", "nosniff")
         .body(bytes);
+  }
+
+  /** Ảnh sản phẩm ở mọi trạng thái (kể cả bản nháp) dành cho Shop Admin xem & kiểm duyệt. */
+  @GetMapping("/admin/products/{productId}/images/{imageId}/content")
+  @PreAuthorize("hasRole('SHOP_ADMIN')")
+  public ResponseEntity<byte[]> adminProductImage(
+      @PathVariable String productId,
+      @PathVariable String imageId,
+      @RequestParam(defaultValue = "original") String kind) {
+    Problem.require(Set.of("original", "cutout").contains(kind), 400, "IMAGE_KIND_INVALID", "kind cần original hoặc cutout.");
+    var row = db.one(
+        "SELECT DuongDanAnhGoc,DuongDanAnhBocNen FROM HinhAnhSanPham WHERE MaHinhAnh=? AND MaSanPham=?",
+        imageId,
+        productId);
+    String key = Db.text(row, kind.equals("cutout") ? "DuongDanAnhBocNen" : "DuongDanAnhGoc");
+    Problem.require(!key.isEmpty(), 404, "NOT_FOUND", "Ảnh này chưa có dữ liệu.");
+    return png(media.catalogBytes(key));
+  }
+
+  /** Ảnh Agnostic Mask của sản phẩm dành cho Shop Admin kiểm tra qua AI Inspector. */
+  @GetMapping("/admin/products/{productId}/mask/content")
+  @PreAuthorize("hasRole('SHOP_ADMIN')")
+  public ResponseEntity<byte[]> adminProductMask(@PathVariable String productId) {
+    var row = db.one("SELECT DuongDanMatNaVungThayDo FROM SanPham WHERE MaSanPham=?", productId);
+    String key = Db.text(row, "DuongDanMatNaVungThayDo");
+    Problem.require(!key.isEmpty(), 404, "NOT_FOUND", "Sản phẩm chưa có ảnh Agnostic Mask.");
+    return png(media.catalogBytes(key));
   }
 
   /** Kiểm tra ảnh người thật qua AI; mode mock của AI vẫn được giữ nguyên cờ simulated. */
@@ -212,6 +277,19 @@ public class AiController {
     return service.analyze(a.getName(), key, id, b);
   }
 
+  /** Bóc tách nền và tạo Agnostic Mask realtime từ GPU cho một ảnh trang phục. */
+  @PostMapping("/admin/ai/segment-garment")
+  @PreAuthorize("hasRole('SHOP_ADMIN')")
+  public Map<String, Object> segmentGarment(
+      Authentication a, @Valid @RequestBody SegmentRequest req) {
+    return media.segmentGarment(
+        a.getName(),
+        req.garmentAssetId(),
+        req.referenceAssetId(),
+        req.vtonCategory(),
+        req.subtype());
+  }
+
   /** Kết quả từng ảnh giữ quan hệ N ảnh nguồn/N cutout/N mask. */
   @GetMapping("/admin/analyses/{id}")
   @PreAuthorize("hasRole('SHOP_ADMIN')")
@@ -268,8 +346,12 @@ public class AiController {
       // Một ảnh cho một màu; các size cùng màu dùng chung ảnh. Không xóa ảnh màu khác.
       Problem.require(existing.isEmpty() || db.count("SELECT COUNT(*) FROM HinhAnhSanPham WHERE MaSanPham=? AND DuongDanAnhGoc=? AND MaMauSac=?",product,original,sku.get("MaMauSac"))==existing.size(),422,"IMAGE_COLOR_CONFLICT","Ảnh này đã liên kết màu khác.");
       int position=((List<Map<String,Object>>)result.get("variants")).indexOf(meta);
+      long refCoverCount = db.count("SELECT COUNT(*) FROM HinhAnhSanPham WHERE MaSanPham=? AND LaAnhDaiDien=1", product);
+      boolean isCover = refCoverCount == 0 && position == 0;
+      long maxPosition = db.count("SELECT COALESCE(MAX(ThuTuHienThi), 0) FROM HinhAnhSanPham WHERE MaSanPham=?", product);
+      int finalPos = (int) (maxPosition + position + 1);
       if (existing.isEmpty()) db.exec("INSERT INTO HinhAnhSanPham(MaHinhAnh,MaSanPham,DuongDanAnhGoc,DuongDanAnhBocNen,MaMauSac,LaAnhDaiDien,ThuTuHienThi) VALUES(?,?,?,?,?,?,?)",
-          Db.id("HA"),product,original,cutout,sku.get("MaMauSac"),position==0,position);
+          Db.id("HA"),product,original,cutout,sku.get("MaMauSac"),isCover,finalPos);
     }
     var analyzed=(List<Map<String,Object>>)result.get("variants");
     String representative=Objects.toString(analyzed.getFirst().get("maskKey"),"");

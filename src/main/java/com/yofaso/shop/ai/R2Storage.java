@@ -15,11 +15,14 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 public class R2Storage implements AutoCloseable {
   private final S3Client client;
   private final String bucket;
+  private final String privateBucket;
   public R2Storage(@Value("${R2_ENDPOINT:}") String endpoint,
       @Value("${R2_ACCESS_KEY_ID:}") String access,
       @Value("${R2_SECRET_ACCESS_KEY:}") String secret,
-      @Value("${R2_BUCKET_PUBLIC:yofasoshop-catalog}") String bucket) {
+      @Value("${R2_BUCKET_PUBLIC:yofasoshop-catalog}") String bucket,
+      @Value("${R2_BUCKET_PRIVATE:yofasoshop-private}") String privateBucket) {
     this.bucket = bucket;
+    this.privateBucket = (privateBucket == null || privateBucket.isBlank()) ? bucket : privateBucket;
     if (endpoint.isBlank() || access.isBlank() || secret.isBlank()) { client=null; return; }
     var uri = URI.create(endpoint);
     if (!"https".equals(uri.getScheme()) || uri.getHost()==null || uri.getUserInfo()!=null || uri.getQuery()!=null)
@@ -31,16 +34,18 @@ public class R2Storage implements AutoCloseable {
   }
   public String upload(String key, byte[] bytes) {
     Problem.require(client!=null,503,"R2_NOT_CONFIGURED","Cấu hình R2 trước khi đồng bộ kết quả catalog thật.");
-    Problem.require((key.matches("catalog/products/[A-Za-z0-9_/-]+[.]png") || key.matches("avatars/[A-Za-z0-9_/-]+[.]png")) && !key.contains(".."),500,"R2_KEY_INVALID","Key R2 không hợp lệ.");
+    Problem.require((key.matches("(catalog|catalog-processing)/products/[A-Za-z0-9_/-]+[.]png") || key.matches("avatars/[A-Za-z0-9_/-]+[.]png")) && !key.contains(".."),500,"R2_KEY_INVALID","Key R2 không hợp lệ.");
     try {
-      client.putObject(PutObjectRequest.builder().bucket(bucket).key(key).contentType("image/png").build(),RequestBody.fromBytes(bytes));
+      String targetBucket = key.startsWith("catalog-processing/") ? privateBucket : bucket;
+      client.putObject(PutObjectRequest.builder().bucket(targetBucket).key(key).contentType("image/png").build(),RequestBody.fromBytes(bytes));
       return key;
     } catch (Exception e) { throw new Problem(503,"R2_UPLOAD_FAILED","Chưa upload được ảnh lên R2; tác vụ sẽ đối soát lại."); }
   }
   public void delete(String key) {
     if (client == null || key == null || key.isBlank()) return;
     try {
-      client.deleteObject(software.amazon.awssdk.services.s3.model.DeleteObjectRequest.builder().bucket(bucket).key(key).build());
+      String targetBucket = key.startsWith("catalog-processing/") ? privateBucket : bucket;
+      client.deleteObject(software.amazon.awssdk.services.s3.model.DeleteObjectRequest.builder().bucket(targetBucket).key(key).build());
     } catch (Exception ignored) {}
   }
   @jakarta.annotation.PreDestroy public void close() { if(client!=null) client.close(); }

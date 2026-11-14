@@ -297,13 +297,24 @@ public class AiService {
           analyzed.sort(Comparator.comparingInt(v -> inputs.indexOf(v.get("sourceAssetId"))));
           Problem.require(analyzed.size()==inputs.size() && analyzed.stream().map(v -> v.get("sourceAssetId")).distinct().count()==inputs.size()
               && analyzed.stream().allMatch(v -> inputs.contains(v.get("sourceAssetId"))),502,"AI_RESPONSE_INVALID","Kết quả phải khớp mọi ảnh nguồn.");
+          String storageCode = resolveStorageCode(op.get("ResourceId").toString());
           for (int index=0;index<analyzed.size();index++) {
             var item=analyzed.get(index);
-            String product=op.get("ResourceId").toString();
-            item.put("originalKey",media.publishCatalog(product,id,index+1,"original",item.get("sourceAssetId").toString()));
-            item.put("cutoutKey",media.publishCatalog(product,id,index+1,"cutout",item.get("cutoutAssetId").toString()));
-            item.put("maskKey",media.publishCatalog(product,id,index+1,"mask",item.get("maskAssetId").toString()));
+            item.put("originalKey",media.publishCatalog(storageCode,index+1,"original",item.get("sourceAssetId").toString()));
+            item.put("cutoutKey",media.publishCatalog(storageCode,index+1,"cutout",item.get("cutoutAssetId").toString()));
+            item.put("maskKey",media.publishCatalog(storageCode,index+1,"mask",item.get("maskAssetId").toString()));
           }
+          try {
+            var payloadMap = (Map<String, Object>) json.readValue(op.get("Payload").toString(), Map.class);
+            var refIds = (List<?>) payloadMap.get("referenceAssetIds");
+            if (refIds != null && !refIds.isEmpty()) {
+              var refKeys = new ArrayList<String>();
+              for (int rIdx = 0; rIdx < refIds.size(); rIdx++) {
+                refKeys.add(media.publishCatalog(storageCode, rIdx + 1, "reference", refIds.get(rIdx).toString()));
+              }
+              converted.put("referenceKeys", refKeys);
+            }
+          } catch (Exception ignored) {}
         }
         db.exec(
             "UPDATE SanPham SET TrangThaiSanPham='BAN_NHAP' WHERE MaSanPham=?",
@@ -388,5 +399,33 @@ public class AiService {
       case "DAI_CHAM_GOT", "AO_DANG_DAI" -> "LONG";
       default -> "UNKNOWN";
     };
+  }
+
+  /**
+   * Sinh mã lưu trữ slug cố định trên Cloudflare R2:
+   * Giữ nguyên slug nếu đã có ảnh trước đó; nếu mới thì sinh từ Tên sản phẩm + Tiền tố danh mục Nam (m-) / Nữ (w-).
+   */
+  public String resolveStorageCode(String productId) {
+    if (productId == null || productId.isBlank()) return "product";
+    var p = db.rows("SELECT TenSanPham, MaDanhMuc, DuongDanMatNaVungThayDo FROM SanPham WHERE MaSanPham=?", productId);
+    if (p.isEmpty()) return productId;
+    var row = p.getFirst();
+    String currentMask = Objects.toString(row.get("DuongDanMatNaVungThayDo"), "");
+    var matcher = java.util.regex.Pattern.compile("(?:catalog|catalog-processing)/products/([^/]+)/.*").matcher(currentMask);
+    if (matcher.matches()) {
+      return matcher.group(1);
+    }
+    String name = Objects.toString(row.get("TenSanPham"), "");
+    String cat = Objects.toString(row.get("MaDanhMuc"), "");
+    boolean isFemale = cat.matches("DM00000[2567]|DM0000(19|2[0-9]|3[0-2])");
+    boolean isMale = !isFemale && cat.matches("DM00000[134]|DM0000(08|09|1[0-8])");
+    String prefix = isFemale ? "w-" : isMale ? "m-" : "";
+    if (name.isBlank()) return prefix + productId.toLowerCase();
+    String normalized = java.text.Normalizer.normalize(name, java.text.Normalizer.Form.NFD)
+        .replaceAll("\\p{M}", "")
+        .replace("đ", "d").replace("Đ", "d")
+        .toLowerCase();
+    String slug = normalized.replaceAll("[^a-z0-9]+", "-").replaceAll("^-+|-+$", "");
+    return prefix + (slug.isBlank() ? productId.toLowerCase() : slug);
   }
 }

@@ -1,16 +1,32 @@
 package com.yofaso.shop.ai;
 
-import com.yofaso.shop.common.*;
-import java.io.*;
-import java.nio.file.*;
-import java.util.*;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
+
 import javax.imageio.ImageIO;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+
+import com.yofaso.shop.common.Db;
+import com.yofaso.shop.common.Idempotency;
+import com.yofaso.shop.common.Problem;
+import com.yofaso.shop.common.RuntimeState;
 
 /** Storage local private: ảnh PNG chuẩn hóa, metadata gốc được bỏ, không dùng tên upload. */
 @Service
 public class MediaService {
+  private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(MediaService.class);
   private final Path root;
   private final Path cacheDir;
   private final Db db;
@@ -49,10 +65,10 @@ public class MediaService {
     boolean source = Set.of("person", "garment", "reference").contains(role);
     if (source) db.one("SELECT MaNguoiDung FROM NguoiDung WHERE MaNguoiDung=? FOR UPDATE", owner);
     Problem.require(
-        bytes.length > 0 && bytes.length <= 50 * 1024 * 1024,
+        bytes.length > 0 && bytes.length <= 60 * 1024 * 1024,
         413,
         "UPLOAD_TOO_LARGE",
-        "Ảnh rỗng hoặc vượt 50 MB.");
+        "Ảnh rỗng hoặc vượt 60 MB.");
     if (source)
       Problem.require(
           db.runtime().find("media", r -> owner.equals(r.get("OwnerId")) && Set.of("person","garment","reference").contains(r.get("RoleName"))).size()
@@ -113,12 +129,62 @@ public class MediaService {
   /** Đọc file từ filename do server tạo, không từ đường dẫn client truyền. */
   public byte[] bytes(String id) {
     var row = db.runtime().get("media", id);
-    Path p = root.resolve(Db.text(row, "LocalFile")).normalize();
+    Path p;
+    if (row != null && !row.isEmpty() && !Db.text(row, "LocalFile").isBlank()) {
+      p = root.resolve(Db.text(row, "LocalFile")).normalize();
+    } else if (Files.isRegularFile(root.resolve(id + ".png"))) {
+      p = root.resolve(id + ".png");
+    } else if (Files.isRegularFile(root.resolve(id))) {
+      p = root.resolve(id);
+    } else {
+      throw new Problem(503, "ASSET_UNAVAILABLE", "Ảnh không còn trên storage: " + id);
+    }
     Problem.require(p.startsWith(root), 500, "STORAGE_INVALID", "Storage không hợp lệ.");
     try {
       return Files.readAllBytes(p);
     } catch (IOException e) {
       throw new Problem(503, "ASSET_UNAVAILABLE", "Ảnh không còn trên storage.");
+    }
+  }
+
+  /** Gọi AI Service phân tích màu sản phẩm; fallback rỗng nếu AI bận. */
+  public Map<String, Object> detectGarmentColor(byte[] bytes) {
+    try {
+      return ai.analyzeGarmentColor(bytes);
+    } catch (Exception e) {
+      return Map.of();
+    }
+  }
+
+  /** Bóc tách nền và tạo mask realtime từ YOLOv8s-seg + SAM 2 trên GPU. */
+  public Map<String, Object> segmentGarment(
+      String owner, String garmentAssetId, String referenceAssetId, String category, String subtype) {
+    try {
+      String remoteGarment = remote(garmentAssetId);
+      String remoteRef = (referenceAssetId != null && !referenceAssetId.isBlank()) ? remote(referenceAssetId) : null;
+      var remoteRes = ai.segmentGarmentRealtime(remoteGarment, remoteRef, category, subtype);
+      if (remoteRes == null || remoteRes.isEmpty()) return Map.of();
+
+      String remoteCutout = Objects.toString(remoteRes.get("cutoutAssetId"), "");
+      String remoteMask = Objects.toString(remoteRes.get("maskAssetId"), "");
+      boolean simulated = Boolean.TRUE.equals(remoteRes.get("simulated"));
+
+      String localCutout = remoteCutout.isEmpty() ? null : importResult(owner, "cutout", remoteCutout, simulated);
+      String localMask = remoteMask.isEmpty() ? null : importResult(owner, "mask", remoteMask, simulated);
+
+      var res = new LinkedHashMap<String, Object>(remoteRes);
+      if (localCutout != null) {
+        res.put("cutoutAssetId", localCutout);
+        res.put("cutoutUrl", "/assets/" + localCutout + "/content");
+      }
+      if (localMask != null) {
+        res.put("maskAssetId", localMask);
+        res.put("maskUrl", "/assets/" + localMask + "/content");
+      }
+      return res;
+    } catch (Exception e) {
+      log.error("MediaService segmentGarment error: {}", e.getMessage(), e);
+      return Map.of();
     }
   }
 
@@ -172,9 +238,9 @@ public class MediaService {
 
   /** Đọc object key công khai trong seed SQL; host cố định từ cấu hình, không nhận URL client. */
   public byte[] catalogBytes(String key) {
-    if (key != null && key.matches("[a-f0-9]{32}")) return bytes(key);
+    if (key != null && key.matches("[a-f0-9-]{32,36}")) return bytes(key);
     Problem.require(key != null && key.length() <= 500
-        && (key.startsWith("catalog/products/") || key.startsWith("avatars/"))
+        && (key.startsWith("catalog/products/") || key.startsWith("catalog-processing/products/") || key.startsWith("avatars/"))
         && key.matches("[A-Za-z0-9_./-]+")
         && Arrays.stream(key.split("/", -1)).noneMatch(part -> part.isEmpty() || part.equals(".") || part.equals("..")),
         422, "CATALOG_KEY_INVALID", "Object key catalog không hợp lệ.");
@@ -306,11 +372,23 @@ public class MediaService {
   }
 
   /** Mọi ảnh có key riêng theo revision và thứ tự upload; retry ghi lại cùng nội dung. */
+  public String publishCatalog(String product, int position, String role, String asset) {
+    return publishCatalog(product, "", position, role, asset);
+  }
+
   public String publishCatalog(String product, String analysis, int position, String role, String asset) {
-    Problem.require(product.matches("[A-Za-z0-9_-]{1,20}") && analysis.matches("[A-Za-z0-9_-]{1,20}"),
+    Problem.require(product != null && product.matches("[A-Za-z0-9_-]{1,100}"),
         422,"PRODUCT_ID_INVALID","Mã sản phẩm/analysis không hợp lệ.");
-    String key="catalog/products/"+product+"/"+analysis+"/"+product+String.format("--img%02d--v01--",position)+role+".png";
-    return r2.upload(key, bytes(asset));
+    String prefix = role.equals("mask") || role.equals("reference") ? "catalog-processing/products/" + product + "/" : "catalog/products/" + product + "/";
+    String fileCode = role.equals("reference")
+        ? String.format("--ref%02d--v01--reference.png", position)
+        : role.equals("reference_original")
+            ? String.format("--ref%02d--v01--original.png", position)
+            : String.format("--img%02d--v01--%s.png", position, role);
+    String key = prefix + product + fileCode;
+    byte[] data = bytes(asset);
+    saveToCache(key, data);
+    return r2.upload(key, data);
   }
 
   /** Chỉ xóa ảnh riêng chưa được tham chiếu; lỗi I/O không xóa bản ghi để còn thử lại. */

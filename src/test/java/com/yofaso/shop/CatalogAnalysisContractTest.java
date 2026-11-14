@@ -62,7 +62,9 @@ class CatalogAnalysisContractTest {
       var uploaded=capture.getAllValues();
       assertEquals(6,new HashSet<>(uploaded).size());
       assertEquals(2,uploaded.stream().filter(k -> k.endsWith("--mask.png")).count());
-      assertTrue(uploaded.stream().allMatch(k -> k.contains("/"+id+"/")));
+      assertTrue(uploaded.stream().allMatch(k -> k.contains("/products/SPTEST/SPTEST--")));
+      assertTrue(uploaded.stream().anyMatch(k -> k.startsWith("catalog-processing/products/SPTEST/")));
+      assertTrue(uploaded.stream().anyMatch(k -> k.startsWith("catalog/products/SPTEST/")));
       // Khởi tạo adapter đọc lại manifest vẫn thấy operation và mapping ảnh sau restart.
       assertEquals(first,runtime.get("media",first).get("AssetId"));
     }

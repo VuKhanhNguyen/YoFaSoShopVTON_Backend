@@ -916,7 +916,7 @@ public class StaffController {
             + "  SELECT b.MaBienDong AS id, "
             + "         DATE_FORMAT(b.NgayThucHien, '%d/%m/%Y %H:%i') AS time, "
             + "         CONCAT(COALESCE(u.HoVaTen, u.TenDangNhap, 'Thủ kho'), ' · ', COALESCE(b.MaNhanVienThucHien, 'Hệ thống')) AS actor, "
-            + "         CONCAT('Biến động kho [', b.LoaiBienDong, ']: ', (CASE WHEN b.SoLuongThayDoi > 0 THEN CONCAT('+', b.SoLuongThayDoi) ELSE CAST(b.SoLuongThayDoi AS CHAR) END), ' cái') AS action, "
+            + "         CONCAT('Biến động kho [', b.LoaiBienDong, ']: ', (CASE WHEN b.SoLuongThayDoi > 0 THEN '+' ELSE '' END), b.SoLuongThayDoi, ' cái') AS action, "
             + "         CONCAT('Mã SKU: ', COALESCE(bt.MaQuanLyHangHoa, b.MaBienThe), ' · Lý do: ', COALESCE(b.GhiChu, 'Cân bằng tồn kho')) AS reason, "
             + "         b.NgayThucHien AS sortTime "
             + "  FROM BienDongKho b "

@@ -35,7 +35,9 @@ public class CatalogController {
       @NotNull @Pattern(regexp = "VAI_TRON|HOA_VAN_NHO|HOA_TO_BAN|KE_SOC_TAM|KE_CARO|IN_HINH")
           String pattern,
       @NotNull @Pattern(regexp = "upper_body|lower_body|dress") String vtonCategory,
-      @NotBlank @Size(max = 50) String subtype) {}
+      @NotBlank @Size(max = 50) String subtype,
+      @Size(max = 10000) String extractedPalette,
+      @Pattern(regexp = "BAN_NHAP|DANG_XU_LY_AI|DANG_KINH_DOANH|TAM_NGUNG") String status) {}
 
   public record Variant(
       @NotBlank @Size(max = 50) String sku,
@@ -45,7 +47,27 @@ public class CatalogController {
       @NotNull @DecimalMin("0") @Digits(integer = 10, fraction = 2) BigDecimal price,
       @DecimalMin("0") @Digits(integer = 10, fraction = 2) BigDecimal salePrice,
       @Size(max = 50) String shelf,
-      @NotNull @Pattern(regexp = "DANG_BAN|HET_HANG|NGUNG_BAN") String status) {}
+      @NotNull @Pattern(regexp = "DANG_BAN|HET_HANG|NGUNG_BAN") String status,
+      @Min(0) @Max(1000000000) Integer stock) {}
+
+  public record ProductImageItem(
+      @Size(max = 20) String imageId,
+      @NotBlank @Size(max = 255) String assetId,
+      @Size(max = 255) String cutoutAssetId,
+      @Size(max = 255) String maskAssetId,
+      @NotNull @Pattern(regexp = "#[0-9A-Fa-f]{6}(,#[0-9A-Fa-f]{6}){0,8}") String colors,
+      boolean cover,
+      @Min(0) int position,
+      String role) {}
+
+  public record ProductImages(
+      @NotNull @Size(max = 16) List<@Valid ProductImageItem> images,
+      @Size(max = 10000) String extractedPalette,
+      @Size(max = 255) String maskAssetId) {}
+
+  public record VtonQuickUpdate(
+      @NotNull @Pattern(regexp = "upper_body|lower_body|dress") String vtonCategory,
+      @Size(max = 50) String subtype) {}
 
   private final Db db;
   private final CatalogService service;
@@ -121,10 +143,17 @@ public class CatalogController {
     response.put("materials",db.rows("SELECT DISTINCT p.ChatLieu AS value,p.ChatLieu AS label FROM SanPham p WHERE p.ChatLieu IS NOT NULL AND p.ChatLieu<>''"+active+" ORDER BY p.ChatLieu"));
     response.put("colors",db.rows("SELECT DISTINCT b.MaMauSac AS value,b.TenMau AS label FROM BienTheSanPham b JOIN SanPham p ON p.MaSanPham=b.MaSanPham WHERE 1=1"+active+(staff ? "" : " AND b.TrangThai<>'NGUNG_BAN'")+" ORDER BY b.TenMau"));
     response.put("fit",VietnameseLabels.options("OM_SAT","SUONG_VUA","RONG_OVERSIZE"));
+    response.put("waist",VietnameseLabels.options("CAP_CAO","CAP_VUA","CAP_TRE","KHONG_AP_DUNG"));
+    response.put("length",VietnameseLabels.options("AO_CROPTOP","AO_TIEU_CHUAN","AO_DANG_DAI","NGAN_TREN_GOI","LUNG_NGANG_GOI","MIDI_QUA_GOI","DAI_CHAM_GOT"));
     response.put("pattern",VietnameseLabels.options("VAI_TRON","HOA_VAN_NHO","HOA_TO_BAN","KE_SOC_TAM","KE_CARO","IN_HINH"));
-    response.put("categories",db.rows("SELECT MaDanhMuc AS value,TenDanhMuc AS label FROM DanhMuc"+(staff ? "" : " WHERE TrangThai='HIEN_THI'")+" ORDER BY ThuTuHienThi"));
+    response.put("vtonCategory",VietnameseLabels.options("upper_body","lower_body","dress"));
+    response.put("subtypes",VietnameseLabels.options(
+        "short_sleeved_shirt","long_sleeved_shirt","short_sleeved_outwear","long_sleeved_outwear",
+        "vest","sling","shorts","trousers","skirt","short_sleeved_dress","long_sleeved_dress","vest_dress","sling_dress"));
+    response.put("categories",db.rows("SELECT MaDanhMuc AS value,TenDanhMuc AS label,MaDanhMucCha AS parentId FROM DanhMuc"+(staff ? "" : " WHERE TrangThai='HIEN_THI'")+" ORDER BY ThuTuHienThi"));
     response.put("sizes",List.of("XS","S","M","L","XL","XXL","FREESIZE"));
-    if(staff) response.put("status",VietnameseLabels.options("BAN_NHAP","DANG_XU_LY_AI","DANG_KINH_DOANH","NGUNG_KINH_DOANH"));
+    response.put("shelves",db.rows("SELECT DISTINCT ViTriGiaKe AS value,ViTriGiaKe AS label FROM BienTheSanPham WHERE ViTriGiaKe IS NOT NULL AND ViTriGiaKe<>'' ORDER BY ViTriGiaKe"));
+    if(staff) response.put("status",VietnameseLabels.options("BAN_NHAP","DANG_XU_LY_AI","DANG_KINH_DOANH","TAM_NGUNG"));
     return response;
   }
 
@@ -216,7 +245,7 @@ public class CatalogController {
     return Map.of("variantId", service.variant(id, null, b, a.getName()));
   }
 
-  /** Sửa giá/màu/size SKU, không cho sửa trực tiếp tồn kho. */
+  /** Sửa giá/màu/size/tồn SKU. */
   @PutMapping("/admin/products/{id}/variants/{variantId}")
   @Transactional
   @PreAuthorize("hasRole('SHOP_ADMIN')")
@@ -226,5 +255,29 @@ public class CatalogController {
       @Valid @RequestBody Variant b,
       Authentication a) {
     return Map.of("variantId", service.variant(id, variantId, b, a.getName()));
+  }
+
+  /** Xóa SKU chưa có lịch sử giao dịch hoặc chuyển NGUNG_BAN. */
+  @DeleteMapping("/admin/products/{id}/variants/{variantId}")
+  @PreAuthorize("hasRole('SHOP_ADMIN')")
+  public Map<String, Object> deleteVariant(
+      @PathVariable String id, @PathVariable String variantId, Authentication a) {
+    return service.deleteVariant(id, variantId, a.getName());
+  }
+
+  /** Lưu đồng bộ danh sách ảnh theo màu và bảng màu trích xuất K-Means. */
+  @PostMapping("/admin/products/{id}/images")
+  @PreAuthorize("hasRole('SHOP_ADMIN')")
+  public Map<String, Object> saveImages(
+      @PathVariable String id, @Valid @RequestBody ProductImages b, Authentication a) {
+    return Map.of("images", service.saveImages(id, b, a.getName()));
+  }
+
+  /** Cập nhật nhanh phân loại VTON và tiểu loại DeepFashion2 từ AI Inspector. */
+  @PatchMapping("/admin/products/{id}/vton")
+  @PreAuthorize("hasRole('SHOP_ADMIN')")
+  public Map<String, Object> updateVton(
+      @PathVariable String id, @Valid @RequestBody VtonQuickUpdate b, Authentication a) {
+    return service.updateVton(id, b.vtonCategory(), b.subtype(), a.getName());
   }
 }

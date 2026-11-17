@@ -2,6 +2,8 @@ package com.yofaso.shop.ai;
 
 import com.yofaso.shop.common.Problem;
 import java.net.URI;
+import java.util.Arrays;
+import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.auth.credentials.*;
@@ -9,6 +11,7 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 
 /** R2 S3: key bền vững, không lưu URL ký có thời hạn vào SQL. */
 @Service
@@ -33,19 +36,60 @@ public class R2Storage implements AutoCloseable {
         .apiCallAttemptTimeout(java.time.Duration.ofSeconds(15))).build();
   }
   public String upload(String key, byte[] bytes) {
+    put(key, bytes, false);
+    return key;
+  }
+
+  public boolean createCatalogObject(String key, byte[] bytes) {
+    return put(key, bytes, true);
+  }
+
+  private String bucketFor(String key) {
+    return key.startsWith("catalog-processing/") ? privateBucket : bucket;
+  }
+
+  public List<String> catalogKeys(String prefix) {
+    Problem.require(client != null, 503, "R2_NOT_CONFIGURED", "Cấu hình R2 trước khi đồng bộ catalog.");
+    try {
+      return client.listObjectsV2Paginator(r -> r.bucket(bucketFor(prefix)).prefix(prefix))
+          .contents().stream().map(object -> object.key()).toList();
+    } catch (RuntimeException e) {
+      throw new Problem(503, "R2_READ_FAILED", "Chưa kiểm tra được ảnh catalog trên R2.");
+    }
+  }
+
+  public boolean catalogObjectMatches(String key, byte[] bytes) {
+    try (var object = client.getObject(r -> r.bucket(bucketFor(key)).key(key))) {
+      if (object.response().contentLength() != bytes.length) {
+        object.abort();
+        return false;
+      }
+      return Arrays.equals(bytes, object.readNBytes(bytes.length + 1));
+    } catch (S3Exception e) {
+      if (e.statusCode() == 404) return false;
+      throw new Problem(503, "R2_READ_FAILED", "Chưa kiểm tra được ảnh catalog trên R2.");
+    } catch (java.io.IOException | RuntimeException e) {
+      throw new Problem(503, "R2_READ_FAILED", "Chưa kiểm tra được ảnh catalog trên R2.");
+    }
+  }
+
+  private boolean put(String key, byte[] bytes, boolean createOnly) {
     Problem.require(client!=null,503,"R2_NOT_CONFIGURED","Cấu hình R2 trước khi đồng bộ kết quả catalog thật.");
     Problem.require((key.matches("(catalog|catalog-processing)/products/[A-Za-z0-9_/-]+[.]png") || key.matches("avatars/[A-Za-z0-9_/-]+[.]png")) && !key.contains(".."),500,"R2_KEY_INVALID","Key R2 không hợp lệ.");
     try {
-      String targetBucket = key.startsWith("catalog-processing/") ? privateBucket : bucket;
-      client.putObject(PutObjectRequest.builder().bucket(targetBucket).key(key).contentType("image/png").build(),RequestBody.fromBytes(bytes));
-      return key;
+      var request = PutObjectRequest.builder().bucket(bucketFor(key)).key(key).contentType("image/png");
+      if (createOnly) request.ifNoneMatch("*");
+      client.putObject(request.build(), RequestBody.fromBytes(bytes));
+      return true;
+    } catch (S3Exception e) {
+      if (createOnly && e.statusCode() == 412) return false;
+      throw new Problem(503, "R2_UPLOAD_FAILED", "Chưa upload được ảnh lên R2; tác vụ sẽ đối soát lại.");
     } catch (Exception e) { throw new Problem(503,"R2_UPLOAD_FAILED","Chưa upload được ảnh lên R2; tác vụ sẽ đối soát lại."); }
   }
   public void delete(String key) {
     if (client == null || key == null || key.isBlank()) return;
     try {
-      String targetBucket = key.startsWith("catalog-processing/") ? privateBucket : bucket;
-      client.deleteObject(software.amazon.awssdk.services.s3.model.DeleteObjectRequest.builder().bucket(targetBucket).key(key).build());
+      client.deleteObject(software.amazon.awssdk.services.s3.model.DeleteObjectRequest.builder().bucket(bucketFor(key)).key(key).build());
     } catch (Exception ignored) {}
   }
   @jakarta.annotation.PreDestroy public void close() { if(client!=null) client.close(); }

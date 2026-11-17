@@ -22,7 +22,7 @@ class CatalogCrudServiceTest {
     var runtime = mock(com.yofaso.shop.common.RuntimeState.class);
     when(db.runtime()).thenReturn(runtime);
     var storage = mock(com.yofaso.shop.ai.R2Storage.class);
-    when(storage.upload(anyString(), any())).thenAnswer(call -> call.getArgument(0));
+    when(storage.createCatalogObject(anyString(), any())).thenReturn(true);
     var media = spy(new MediaService(directory.toString(), db, mock(com.yofaso.shop.ai.AiClient.class), storage, ""));
     doReturn(new byte[] {1, 2, 3}).when(media).bytes("asset");
     String slug = "w-dam-Xuan-He";
@@ -34,6 +34,29 @@ class CatalogCrudServiceTest {
         media.publishCatalog(slug, 2, "mask", "asset"));
     assertEquals("catalog-processing/products/" + slug + "/" + slug + "--ref01--v01--reference.png",
         media.publishCatalog(slug, 1, "reference", "asset"));
+  }
+
+  @Test
+  void recreatingProductReusesMatchingR2ObjectAndVersionsDifferentContent(
+      @org.junit.jupiter.api.io.TempDir java.nio.file.Path directory) throws Exception {
+    var db = mock(Db.class);
+    when(db.runtime()).thenReturn(mock(com.yofaso.shop.common.RuntimeState.class));
+    var storage = mock(com.yofaso.shop.ai.R2Storage.class);
+    var media = spy(new MediaService(directory.toString(), db, mock(com.yofaso.shop.ai.AiClient.class), storage, ""));
+    byte[] image = {1, 2, 3};
+    doReturn(image).when(media).bytes("asset");
+
+    String original = "catalog/products/m-Polo/m-Polo--img01--v";
+    String mask = "catalog-processing/products/m-Polo/m-Polo--img01--v";
+    when(storage.catalogKeys(original)).thenReturn(List.of(original + "01--original.png"));
+    when(storage.catalogObjectMatches(original + "01--original.png", image)).thenReturn(true);
+    when(storage.catalogKeys(mask)).thenReturn(List.of(mask + "03--mask.png"));
+    when(storage.createCatalogObject(mask + "04--mask.png", image)).thenReturn(true);
+
+    assertEquals(original + "01--original.png", media.publishCatalog("m-Polo", 1, "original", "asset"));
+    verify(storage, never()).createCatalogObject(startsWith(original), any());
+    assertEquals(mask + "04--mask.png", media.publishCatalog("m-Polo", 1, "mask", "asset"));
+    verify(storage).createCatalogObject(mask + "04--mask.png", image);
   }
 
   @Test

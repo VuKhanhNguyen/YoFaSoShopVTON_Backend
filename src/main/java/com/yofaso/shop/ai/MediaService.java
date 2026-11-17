@@ -488,31 +488,37 @@ public class MediaService {
     String digest = Idempotency.hash(java.util.Base64.getEncoder().encodeToString(data));
     String slot = prefix + product + fileCode;
     var versions = db.runtime().find("catalog", row -> slot.equals(row.get("Slot")));
-    for (var row : versions) {
-      if (digest.equals(row.get("Digest"))) {
-        String key = Db.text(row, "Key");
-        db.runtime().patch("media", asset, "CatalogKey", key);
-        return key;
-      }
-    }
     int version = versions.stream().mapToInt(row -> ((Number) row.get("Version")).intValue()).max().orElse(0);
     String roleSuffix = role.equals("reference_original") ? "original" : role;
-    String imagePrefix = product + String.format(role.startsWith("reference") ? "--ref%02d--v" : "--img%02d--v", position);
-    for (var row : db.rows("SELECT DuongDanAnhGoc AS assetKey FROM HinhAnhSanPham UNION ALL SELECT DuongDanAnhBocNen FROM HinhAnhSanPham UNION ALL SELECT DuongDanMatNaVungThayDo FROM SanPham")) {
-      String existing = Db.text(row, "assetKey");
-      if (existing.startsWith(prefix + imagePrefix) && existing.endsWith("--" + roleSuffix + ".png")) {
-        var match = java.util.regex.Pattern.compile("--v([0-9]+)--").matcher(existing);
-        if (match.find()) version = Math.max(version, Integer.parseInt(match.group(1)));
+    String imagePrefix = prefix + product + String.format(role.startsWith("reference") ? "--ref%02d--v" : "--img%02d--v", position);
+    String suffix = "--" + roleSuffix + ".png";
+    var keyPattern = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote(imagePrefix)
+        + "([0-9]{2,9})" + java.util.regex.Pattern.quote(suffix));
+
+    for (String key : r2.catalogKeys(imagePrefix)) {
+      var match = keyPattern.matcher(key);
+      if (match.matches()) {
+        if (r2.catalogObjectMatches(key, data)) {
+          saveToCache(key, data);
+          db.runtime().patch("media", asset, "CatalogKey", key);
+          return key;
+        }
+        version = Math.max(version, Integer.parseInt(match.group(1)));
       }
     }
+    for (var row : db.rows("SELECT DuongDanAnhGoc AS assetKey FROM HinhAnhSanPham UNION ALL SELECT DuongDanAnhBocNen FROM HinhAnhSanPham UNION ALL SELECT DuongDanMatNaVungThayDo FROM SanPham")) {
+      var match = keyPattern.matcher(Db.text(row, "assetKey"));
+      if (match.matches()) version = Math.max(version, Integer.parseInt(match.group(1)));
+    }
     version++;
-    String key = slot.replace("--v01--", String.format("--v%02d--", version));
-    String uploaded = r2.upload(key, data);
+    String key = imagePrefix + String.format("%02d", version) + suffix;
+    Problem.require(r2.createCatalogObject(key, data) || r2.catalogObjectMatches(key, data),
+        409, "CATALOG_IMAGE_WRITE_CONFLICT", "Ảnh đang được đồng bộ. Hãy thử lưu lại.");
     db.runtime().put("catalog", Idempotency.hash(key),
         Map.of("Slot", slot, "Key", key, "Digest", digest, "Version", version));
     saveToCache(key, data);
     db.runtime().patch("media", asset, "CatalogKey", key);
-    return uploaded;
+    return key;
   }
 
   /** Chỉ xóa ảnh riêng chưa được tham chiếu; lỗi I/O không xóa bản ghi để còn thử lại. */

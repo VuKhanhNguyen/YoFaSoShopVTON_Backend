@@ -554,7 +554,7 @@ Xóa ảnh riêng chưa dùng trong lịch sử/catalog/job, tránh phá ảnh c
 Tải ảnh cá nhân/kết quả riêng, không trả filesystem path.
 
 - Quyền: `JWT của người dùng`. Thành công: **200**.
-- Tham số: Không có query/header riêng.. Biến đường dẫn: `id` → `assetId`.
+- Tham số: thumbnail (tùy chọn). Biến đường dẫn: `id` → `assetId`.
 
 #### BE-49. `POST /api/v1/assets/{id}/detect-color`
 
@@ -1520,12 +1520,12 @@ Body → raw → JSON (đã có sẵn trong collection):
 
 ```json
 {
-  "consent": true,
+  "variantId": "{{variantId}}",
   "personAssetId": "{{personAssetId}}",
-  "samples": 1,
   "seed": 42,
   "steps": 20,
-  "variantId": "{{variantId}}"
+  "samples": 1,
+  "consent": true
 }
 ```
 

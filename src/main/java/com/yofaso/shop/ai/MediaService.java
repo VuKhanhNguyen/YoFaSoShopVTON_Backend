@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.HashSet;
 import java.util.UUID;
 
 import javax.imageio.ImageIO;
@@ -118,6 +119,62 @@ public class MediaService {
   /** Chặn truy cập ảnh cá nhân của người khác, kể cả khi biết UUID. */
   public Map<String, Object> owned(String id, String owner) {
     return ownedRecord(id, owner);
+  }
+
+  synchronized String shopPerson(String owner, String model) {
+    Problem.require(Set.of("female", "male").contains(model), 422, "SHOP_MODEL_INVALID", "Mẫu shop không hợp lệ.");
+    var existing = db.runtime().find("media", row -> owner.equals(row.get("OwnerId"))
+        && "person".equals(row.get("RoleName")) && model.equals(row.get("ShopModelId")));
+    try (var input = new org.springframework.core.io.ClassPathResource("vton-models/" + model + ".png").getInputStream()) {
+      byte[] bytes = input.readAllBytes();
+      if (!existing.isEmpty()) {
+        String existingId = Db.text(existing.getFirst(), "AssetId");
+        Path existingFile = root.resolve(existingId + ".png");
+        if (Files.exists(existingFile) && Files.size(existingFile) == bytes.length) {
+          return existingId;
+        }
+      }
+      String id = Db.text(save(owner, "person", bytes, false), "assetId");
+      db.runtime().patch("media", id, "ShopModelId", model);
+      return id;
+    } catch (IOException e) {
+      throw new Problem(503, "SHOP_MODEL_UNAVAILABLE", "Ảnh mẫu shop chưa sẵn sàng.");
+    }
+  }
+
+  String readableAsset(String id, String owner) {
+    if (id.isBlank()) return null;
+    var row = db.runtime().findById("media", id);
+    return row != null && owner.equals(row.get("OwnerId")) ? id : null;
+  }
+
+  String shopModelId(String id) {
+    return Db.text(db.runtime().get("media", id), "ShopModelId");
+  }
+
+  byte[] thumbnail(String id) {
+    try {
+      byte[] original = bytes(id);
+      var source = ImageIO.read(new ByteArrayInputStream(original));
+      if (source == null) throw new IOException("Unreadable PNG");
+      double scale = Math.min(1, 240.0 / Math.max(source.getWidth(), source.getHeight()));
+      if (scale == 1) return original;
+      var thumb = new java.awt.image.BufferedImage(Math.max(1, (int)(source.getWidth() * scale)),
+          Math.max(1, (int)(source.getHeight() * scale)), java.awt.image.BufferedImage.TYPE_INT_ARGB);
+      var graphics = thumb.createGraphics();
+      try {
+        graphics.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION,
+            java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        graphics.drawImage(source, 0, 0, thumb.getWidth(), thumb.getHeight(), null);
+      } finally {
+        graphics.dispose();
+      }
+      var output = new ByteArrayOutputStream();
+      ImageIO.write(thumb, "png", output);
+      return output.toByteArray();
+    } catch (IOException e) {
+      throw new Problem(503, "ASSET_UNAVAILABLE", "Không đọc được ảnh thu nhỏ.");
+    }
   }
 
   private Map<String,Object> ownedRecord(String id, String owner) {
@@ -370,11 +427,47 @@ public class MediaService {
   public String importResult(String owner, String role, String remote, boolean simulated) {
     var old =
         db.runtime().find("media", r -> owner.equals(r.get("OwnerId")) && remote.equals(r.get("AiAssetId")) && role.equals(r.get("RoleName")));
-    if (!old.isEmpty()) return Db.text(old.getFirst(), "AssetId");
+    for (var cached : old) {
+      String file = Db.text(cached, "LocalFile");
+      if (!file.isBlank() && Files.isRegularFile(root.resolve(file)))
+        return Db.text(cached, "AssetId");
+    }
     var asset = save(owner, role, ai.download(remote), simulated);
     String id = asset.get("assetId").toString();
     db.runtime().patch("media", id, "AiAssetId", remote);
     return id;
+  }
+
+  /** Giữ slug đã công bố; ảnh mới cùng sản phẩm dùng chung thư mục. */
+  public String catalogStorageCode(String productId) {
+    var product = db.one("SELECT TenSanPham,MaDanhMuc FROM SanPham WHERE MaSanPham=?", productId);
+    for (var row : db.rows("SELECT DuongDanAnhGoc FROM HinhAnhSanPham WHERE MaSanPham=? ORDER BY ThuTuHienThi,MaHinhAnh", productId)) {
+      var matcher = java.util.regex.Pattern.compile("catalog/products/([mw]-[A-Za-z0-9_-]+)/.*")
+          .matcher(Db.text(row, "DuongDanAnhGoc"));
+      if (matcher.matches()) return matcher.group(1);
+    }
+    String category = Db.text(product, "MaDanhMuc");
+    Set<String> visited = new HashSet<>();
+    while (visited.add(category)) {
+      var row = db.one("SELECT MaDanhMucCha FROM DanhMuc WHERE MaDanhMuc=?", category);
+      String parent = Db.text(row, "MaDanhMucCha");
+      if (parent.isBlank()) break;
+      category = parent;
+    }
+    String code = productSlug(Db.text(product, "TenSanPham"), "DM000002".equals(category));
+    Problem.require(db.count("SELECT COUNT(*) FROM HinhAnhSanPham WHERE MaSanPham<>? AND DuongDanAnhGoc LIKE ?",
+        productId, "catalog/products/" + code + "/%") == 0, 409, "PRODUCT_SLUG_CONFLICT",
+        "Tên sản phẩm trùng thư mục ảnh của sản phẩm khác. Hãy dùng tên phân biệt.");
+    return code;
+  }
+
+  public static String productSlug(String name, boolean female) {
+    String slug = java.text.Normalizer.normalize(name, java.text.Normalizer.Form.NFD)
+        .replaceAll("\\p{M}", "").replace('đ', 'd').replace('Đ', 'D')
+        .replaceAll("[^A-Za-z0-9]+", "-").replaceAll("^-+|-+$", "");
+    Problem.require(!slug.isEmpty() && slug.length() <= 98, 422, "PRODUCT_SLUG_INVALID",
+        "Tên sản phẩm cần tạo được mã lưu trữ tối đa 98 ký tự.");
+    return (female ? "w-" : "m-") + slug;
   }
 
   /** Mọi ảnh có key riêng theo revision và thứ tự upload; retry ghi lại cùng nội dung. */
@@ -382,7 +475,7 @@ public class MediaService {
     return publishCatalog(product, "", position, role, asset);
   }
 
-  public String publishCatalog(String product, String analysis, int position, String role, String asset) {
+  public synchronized String publishCatalog(String product, String analysis, int position, String role, String asset) {
     Problem.require(product != null && product.matches("[A-Za-z0-9_-]{1,100}"),
         422,"PRODUCT_ID_INVALID","Mã sản phẩm/analysis không hợp lệ.");
     String prefix = role.equals("mask") || role.equals("reference") ? "catalog-processing/products/" + product + "/" : "catalog/products/" + product + "/";
@@ -391,10 +484,34 @@ public class MediaService {
         : role.equals("reference_original")
             ? String.format("--ref%02d--v01--original.png", position)
             : String.format("--img%02d--v01--%s.png", position, role);
-    String key = prefix + product + fileCode;
     byte[] data = bytes(asset);
+    String digest = Idempotency.hash(java.util.Base64.getEncoder().encodeToString(data));
+    String slot = prefix + product + fileCode;
+    var versions = db.runtime().find("catalog", row -> slot.equals(row.get("Slot")));
+    for (var row : versions) {
+      if (digest.equals(row.get("Digest"))) {
+        String key = Db.text(row, "Key");
+        db.runtime().patch("media", asset, "CatalogKey", key);
+        return key;
+      }
+    }
+    int version = versions.stream().mapToInt(row -> ((Number) row.get("Version")).intValue()).max().orElse(0);
+    String roleSuffix = role.equals("reference_original") ? "original" : role;
+    String imagePrefix = product + String.format(role.startsWith("reference") ? "--ref%02d--v" : "--img%02d--v", position);
+    for (var row : db.rows("SELECT DuongDanAnhGoc AS assetKey FROM HinhAnhSanPham UNION ALL SELECT DuongDanAnhBocNen FROM HinhAnhSanPham UNION ALL SELECT DuongDanMatNaVungThayDo FROM SanPham")) {
+      String existing = Db.text(row, "assetKey");
+      if (existing.startsWith(prefix + imagePrefix) && existing.endsWith("--" + roleSuffix + ".png")) {
+        var match = java.util.regex.Pattern.compile("--v([0-9]+)--").matcher(existing);
+        if (match.find()) version = Math.max(version, Integer.parseInt(match.group(1)));
+      }
+    }
+    version++;
+    String key = slot.replace("--v01--", String.format("--v%02d--", version));
     String uploaded = r2.upload(key, data);
+    db.runtime().put("catalog", Idempotency.hash(key),
+        Map.of("Slot", slot, "Key", key, "Digest", digest, "Version", version));
     saveToCache(key, data);
+    db.runtime().patch("media", asset, "CatalogKey", key);
     return uploaded;
   }
 

@@ -158,6 +158,13 @@ class ActualAiIntegrationTest {
     assertEquals("MOCK_RESULT_ONLY",stored.get("ThongBaoLoi"));
     assertNotNull(stored.get("ThoiGianXuLy"));
     assertTrue(media.bytes(data.get("resultAssetId").toString()).length > 100);
+    String shopSession = service.create(id, "actual-shop-model-key",
+        new AiController.TryOn(variant, null, 42, 20, 1, true, "male")).get("resourceId").toString();
+    assertEquals(true, await(shopSession, id).get("simulated"));
+    var shopView = service.session(shopSession, id);
+    assertEquals("male", shopView.get("shopModelId"));
+    assertEquals("COMPLETED", shopView.get("status"));
+    assertNotNull(shopView.get("resultAssetId"));
     var op =
         service.analyze(
             id,

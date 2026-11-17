@@ -64,6 +64,7 @@ app:
     key: ${AI_INTERNAL_API_KEY:}
     connect-timeout-seconds: ${AI_CONNECT_TIMEOUT_SECONDS:15}
     read-timeout-seconds: ${AI_SUBMIT_TIMEOUT_SECONDS:180}
+    vton-http-timeout-seconds: ${AI_VTON_HTTP_TIMEOUT_SECONDS:15}
     poll-ms: ${AI_POLL_INTERVAL_MS:3000}
     enabled: ${AI_POLL_ENABLED:true}
   bootstrap:

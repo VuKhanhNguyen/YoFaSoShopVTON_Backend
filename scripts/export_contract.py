@@ -30,6 +30,7 @@ def example(s,field=''):
  if field in values:return values[field]
  if '$ref' in s:
   name=s['$ref'].split('/')[-1]
+  if name=='TryOn':return {'variantId':'{{variantId}}','personAssetId':'{{personAssetId}}','seed':42,'steps':20,'samples':1,'consent':True}
   if name=='Conversion':return {'provinceCode':'{{oldProvinceCode}}','districtCode':'{{oldDistrictCode}}','wardCode':'{{oldWardCode}}','street':'12 Đường Test'}
   return example(schemas[name])
  if s.get('type')=='object':return {k:example(v,k) for k,v in s.get('properties',{}).items() if k in s.get('required',[]) or k in ['addressId','secondVariantId','provinceCode','wardCode']}

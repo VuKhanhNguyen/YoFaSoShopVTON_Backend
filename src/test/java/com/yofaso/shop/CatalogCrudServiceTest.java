@@ -17,6 +17,33 @@ import org.junit.jupiter.api.Test;
 class CatalogCrudServiceTest {
 
   @Test
+  void catalogFilesShareFolderAndPreserveImagePositions(@org.junit.jupiter.api.io.TempDir java.nio.file.Path directory) throws Exception {
+    var db = mock(Db.class);
+    var runtime = mock(com.yofaso.shop.common.RuntimeState.class);
+    when(db.runtime()).thenReturn(runtime);
+    var storage = mock(com.yofaso.shop.ai.R2Storage.class);
+    when(storage.upload(anyString(), any())).thenAnswer(call -> call.getArgument(0));
+    var media = spy(new MediaService(directory.toString(), db, mock(com.yofaso.shop.ai.AiClient.class), storage, ""));
+    doReturn(new byte[] {1, 2, 3}).when(media).bytes("asset");
+    String slug = "w-dam-Xuan-He";
+    assertEquals("catalog/products/" + slug + "/" + slug + "--img02--v01--original.png",
+        media.publishCatalog(slug, 2, "original", "asset"));
+    assertEquals("catalog/products/" + slug + "/" + slug + "--img02--v01--cutout.png",
+        media.publishCatalog(slug, 2, "cutout", "asset"));
+    assertEquals("catalog-processing/products/" + slug + "/" + slug + "--img02--v01--mask.png",
+        media.publishCatalog(slug, 2, "mask", "asset"));
+    assertEquals("catalog-processing/products/" + slug + "/" + slug + "--ref01--v01--reference.png",
+        media.publishCatalog(slug, 1, "reference", "asset"));
+  }
+
+  @Test
+  void storageSlugUsesProductNameAndGender() {
+    assertEquals("w-dam-Xuan-He-Co-duc-Nhun-Chan-2-Tang",
+        MediaService.productSlug("đầm Xuân Hè Cổ đức Nhún Chân 2 Tầng", true));
+    assertEquals("m-Ao-So-Mi", MediaService.productSlug("Áo Sơ Mi", false));
+  }
+
+  @Test
   void createVariantWithInitialStockRecordsLedgerMovement() {
     var db = mock(Db.class);
     var inventory = mock(InventoryService.class);

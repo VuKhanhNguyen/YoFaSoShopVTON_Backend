@@ -69,9 +69,13 @@ public class RuntimeState implements AutoCloseable {
     return read(collection).values().stream().filter(condition).map(r -> (Map<String,Object>)new LinkedHashMap<>(r)).toList();
   }
   public synchronized Map<String,Object> get(String collection, String id) {
-    var row = read(collection).get(id);
+    var row = findById(collection, id);
     if (row == null) throw new Problem(404, "NOT_FOUND", "Không tìm thấy tài nguyên runtime.");
-    return new LinkedHashMap<>(row);
+    return row;
+  }
+  public synchronized Map<String,Object> findById(String collection, String id) {
+    var row = read(collection).get(id);
+    return row == null ? null : new LinkedHashMap<>(row);
   }
   public synchronized void put(String collection, String id, Map<String,Object> row) {
     var data = read(collection); data.put(id, new LinkedHashMap<>(row)); write(collection, data);

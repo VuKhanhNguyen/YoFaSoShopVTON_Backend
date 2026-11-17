@@ -3380,6 +3380,13 @@
                 "assets",
                 "{{assetId}}",
                 "content"
+              ],
+              "query": [
+                {
+                  "key": "thumbnail",
+                  "value": "false",
+                  "disabled": true
+                }
               ]
             },
             "description": "Tải ảnh cá nhân/kết quả riêng, không trả filesystem path.\nQuyền: JWT",
@@ -9783,7 +9790,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"consent\": true,\n  \"personAssetId\": \"{{personAssetId}}\",\n  \"samples\": 1,\n  \"seed\": 42,\n  \"steps\": 20,\n  \"variantId\": \"{{variantId}}\"\n}",
+              "raw": "{\n  \"variantId\": \"{{variantId}}\",\n  \"personAssetId\": \"{{personAssetId}}\",\n  \"seed\": 42,\n  \"steps\": 20,\n  \"samples\": 1,\n  \"consent\": true\n}",
               "options": {
                 "raw": {
                   "language": "json"

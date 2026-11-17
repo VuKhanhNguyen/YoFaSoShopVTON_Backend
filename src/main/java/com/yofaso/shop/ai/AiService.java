@@ -40,17 +40,16 @@ public class AiService {
   @Transactional
   public Map<String, Object> create(String owner, String key, AiController.TryOn b) {
     Problem.require(b.consent(), 422, "CONSENT_REQUIRED", "Cần đồng ý xử lý ảnh.");
+    Problem.require((b.personAssetId() == null) != (b.shopModelId() == null),
+        422, "PERSON_SOURCE_REQUIRED", "Chọn đúng một ảnh cá nhân hoặc mẫu shop.");
     String old = keys.existing(owner, "TRY_ON", key, b);
     if (old != null) return operation(old, owner);
-    var person = media.owned(b.personAssetId(), owner);
-    Problem.require(
-        "person".equals(person.get("RoleName")),
-        422,
-        "ASSET_ROLE_INVALID",
-        "Cần ảnh tải lên với role person.");
+    if (b.personAssetId() != null)
+      Problem.require("person".equals(media.owned(b.personAssetId(), owner).get("RoleName")),
+          422, "ASSET_ROLE_INVALID", "Cần ảnh tải lên với role person.");
     var v =
         db.one(
-            "SELECT b.MaSanPham,p.PhanLoaiVTON,p.TieuLoaiTrangPhuc,p.ChieuDaiTrangPhuc FROM"
+            "SELECT b.MaSanPham,p.TenSanPham,p.ChatLieu,p.PhanLoaiVTON,p.TieuLoaiTrangPhuc,p.ChieuDaiTrangPhuc,p.KieuDang,p.LoaiCapQuan,p.LoaiHoaTiet,b.KichCo,b.TenMau,b.MaMauSac FROM"
                 + " BienTheSanPham b JOIN SanPham p ON p.MaSanPham=b.MaSanPham WHERE b.MaBienThe=?"
                 + " AND b.TrangThai='DANG_BAN' AND p.TrangThaiSanPham='DANG_KINH_DOANH'",
             b.variantId());
@@ -67,6 +66,7 @@ public class AiService {
         "TRY_ON_LIMIT",
         "Bạn đang có ba phiên chưa hoàn tất.");
     String session = keys.resourceId(owner, "TRY_ON", key, "TD");
+    String personId = b.shopModelId() == null ? b.personAssetId() : media.shopPerson(owner, b.shopModelId());
     db.exec(
         "INSERT INTO"
             + " PhienThuDoAo(MaPhienThuDo,MaNguoiDung,MaBienThe,LoaiKhungAnhNguoi,DuongDanAnhNguoiDung)"
@@ -74,16 +74,32 @@ public class AiService {
         session,
         owner,
         b.variantId(),
-        b.personAssetId());
+        personId);
     var payload = new LinkedHashMap<String, Object>();
     payload.put("sessionId", session);
     payload.put("productId", v.get("MaSanPham"));
     payload.put("variantId", b.variantId());
-    payload.put("personAssetId", b.personAssetId());
+    payload.put("personAssetId", personId);
     payload.put("garmentAssetId", image.get("DuongDanAnhBocNen"));
+    payload.put("productName", v.get("TenSanPham"));
+    payload.put("material", v.get("ChatLieu"));
     payload.put("vtonCategory", v.get("PhanLoaiVTON"));
     payload.put("garmentSubtype", v.get("TieuLoaiTrangPhuc"));
     payload.put("garmentLength", length(Db.text(v, "ChieuDaiTrangPhuc")));
+    payload.put("catalogFit", v.get("KieuDang"));
+    payload.put("catalogLength", v.get("ChieuDaiTrangPhuc"));
+    payload.put("catalogWaist", v.get("LoaiCapQuan"));
+    payload.put("pattern", v.get("LoaiHoaTiet"));
+    payload.put("size", v.get("KichCo"));
+    payload.put("colorName", v.get("TenMau"));
+    payload.put("colorHex", v.get("MaMauSac"));
+    var referenceKeys = db.rows("""
+        SELECT h.DuongDanAnhGoc AS referenceKey FROM HinhAnhSanPham h
+        JOIN BienTheSanPham b ON h.MaSanPham=b.MaSanPham
+        WHERE b.MaBienThe=? AND h.DuongDanAnhGoc REGEXP '--ref[0-9]+--'
+        ORDER BY (h.MaMauSac=b.MaMauSac) DESC,h.LaAnhDaiDien DESC,h.ThuTuHienThi,h.MaHinhAnh LIMIT 2
+        """, b.variantId()).stream().map(row -> Db.text(row, "referenceKey")).distinct().toList();
+    if (!referenceKeys.isEmpty()) payload.put("referenceKeys", referenceKeys);
     payload.put("seed", b.seed());
     payload.put("steps", b.steps());
     payload.put("samples", b.samples());
@@ -151,6 +167,48 @@ public class AiService {
     return row;
   }
 
+  private static final String SESSION_SELECT = """
+      SELECT t.MaPhienThuDo AS sessionId,t.MaBienThe AS variantId,p.MaSanPham AS productId,
+        p.TenSanPham AS productName,p.PhanLoaiVTON AS vtonCategory,t.TrangThaiPhien AS status,
+        t.DuongDanAnhNguoiDung AS personAssetId,t.DuongDanAnhKetQuaVTON AS resultAssetId,
+        t.ThongBaoLoi AS error,t.ThoiGianKhoiTao AS createdAt,t.DiemTongThe AS score,
+        t.LoiNhanXet AS advice
+      FROM PhienThuDoAo t JOIN BienTheSanPham b ON b.MaBienThe=t.MaBienThe
+        JOIN SanPham p ON p.MaSanPham=b.MaSanPham
+      WHERE t.MaNguoiDung=?
+      """;
+
+  public Map<String, Object> session(String id, String owner) {
+    return sessionView(db.one(SESSION_SELECT + " AND t.MaPhienThuDo=?", owner, id), owner, true);
+  }
+
+  public List<Map<String, Object>> history(String owner, int page, int size) {
+    return db.rows(SESSION_SELECT + " ORDER BY t.ThoiGianKhoiTao DESC,t.MaPhienThuDo LIMIT ? OFFSET ?",
+        owner, size, Db.offset(page, size)).stream().map(row -> sessionView(row, owner, false)).toList();
+  }
+
+  private Map<String, Object> sessionView(Map<String, Object> source, String owner, boolean detail) {
+    var row = new LinkedHashMap<>(source);
+    String id = Db.text(row, "sessionId");
+    String personId = media.readableAsset(Db.text(row, "personAssetId"), owner);
+    row.put("personAssetId", personId);
+    row.put("resultAssetId", media.readableAsset(Db.text(row, "resultAssetId"), owner));
+    row.put("shopModelId", personId == null ? null : media.shopModelId(personId));
+    var op = db.runtime().findById("operations", id);
+    if (op != null && owner.equals(op.get("OwnerId"))) {
+      row.put("operationId", id);
+      row.put("resourceId", id);
+      row.put("kind", "TRY_ON");
+      row.put("status", op.get("StateName"));
+      row.put("jobId", op.get("JobId"));
+      row.put("retryable", Boolean.TRUE.equals(op.get("Retryable")));
+      row.put("simulated", "COMPLETED".equals(op.get("StateName")) && Boolean.TRUE.equals(op.get("Simulated")));
+      if (op.get("LastError") != null) row.put("error", op.get("LastError"));
+      if (detail) row.put("result", operation(id, owner).get("result"));
+    }
+    return row;
+  }
+
   public Map<String, Object> latestAnalysis(String product, String owner) {
     db.one("SELECT MaSanPham FROM SanPham WHERE MaSanPham=?", product);
     return db.runtime().find("operations", op -> product.equals(op.get("ResourceId"))
@@ -210,12 +268,28 @@ public class AiService {
       if (kind.equals("TRY_ON")) {
         // Tra session trước mỗi submit để khôi phục response bị mất sau timeout.
         try {
-          remote = ai.get("/internal/v1/try-on/jobs/" + AiClient.id(id));
+          remote = ai.getVton("/internal/v1/try-on/jobs/" + AiClient.id(id));
         } catch (Problem e) {
           if (e.status != 404) throw e;
           payload.put("personAssetId", media.remote(payload.get("personAssetId").toString()));
           payload.put("garmentAssetId", remoteGarment(payload.get("garmentAssetId").toString()));
-          remote = ai.post("/internal/v1/try-on/jobs", payload);
+          Object reference = payload.remove("referenceKey");
+          Object references = payload.remove("referenceKeys");
+          List<?> keys = references instanceof List<?> list ? list
+              : reference instanceof String key ? List.of(key) : List.of();
+          var referenceIds = new ArrayList<String>();
+          for (Object key : keys) {
+            try {
+              referenceIds.add(AiClient.id(Db.text(
+                  ai.upload(media.garmentInput(key.toString()), "reference"), "assetId")));
+            } catch (Problem e2) {
+              org.slf4j.LoggerFactory.getLogger(AiService.class)
+                  .warn("tryon_reference_unavailable sessionId={} code={}", id, e2.code);
+            }
+          }
+          if (referenceIds.size() == 1) payload.put("referenceAssetId", referenceIds.getFirst());
+          else if (!referenceIds.isEmpty()) payload.put("referenceAssetIds", referenceIds);
+          remote = ai.postVton("/internal/v1/try-on/jobs", payload);
         }
       } else {
         payload.put(
@@ -226,7 +300,10 @@ public class AiService {
             ((List<String>) payload.get("referenceAssetIds")).stream().map(media::remote).toList());
         remote = ai.post("/internal/v1/products/analyze", payload);
       }
-    } else remote = ai.get("/internal/v1/jobs/" + AiClient.id(job));
+    } else {
+      String path = "/internal/v1/jobs/" + AiClient.id(job);
+      remote = kind.equals("TRY_ON") ? ai.getVton(path) : ai.get(path);
+    }
     String status = Objects.toString(remote.get("status"), "");
     Problem.require(
         Set.of("QUEUED", "PROCESSING", "COMPLETED", "FAILED", "CANCELLED").contains(status),
@@ -306,12 +383,16 @@ public class AiService {
           analyzed.sort(Comparator.comparingInt(v -> inputs.indexOf(v.get("sourceAssetId"))));
           Problem.require(analyzed.size()==inputs.size() && analyzed.stream().map(v -> v.get("sourceAssetId")).distinct().count()==inputs.size()
               && analyzed.stream().allMatch(v -> inputs.contains(v.get("sourceAssetId"))),502,"AI_RESPONSE_INVALID","Kết quả phải khớp mọi ảnh nguồn.");
-          String storageCode = op.get("ResourceId").toString().toLowerCase(Locale.ROOT) + "-" + id.toLowerCase(Locale.ROOT);
+          String storageCode = media.catalogStorageCode(op.get("ResourceId").toString());
           for (int index=0;index<analyzed.size();index++) {
             var item=analyzed.get(index);
-            item.put("originalKey",media.publishCatalog(storageCode,index+1,"original",item.get("sourceAssetId").toString()));
-            item.put("cutoutKey",media.publishCatalog(storageCode,index+1,"cutout",item.get("cutoutAssetId").toString()));
-            item.put("maskKey",media.publishCatalog(storageCode,index+1,"mask",item.get("maskAssetId").toString()));
+            String sourceKey = Db.text(db.runtime().get("media", item.get("sourceAssetId").toString()), "CatalogKey");
+            var sourcePosition = java.util.regex.Pattern.compile("--img([0-9]+)--").matcher(sourceKey);
+            int position = sourcePosition.find() ? Integer.parseInt(sourcePosition.group(1)) : index + 1;
+            item.put("sourceKey", sourceKey);
+            item.put("originalKey",media.publishCatalog(storageCode,position,"original",item.get("sourceAssetId").toString()));
+            item.put("cutoutKey",media.publishCatalog(storageCode,position,"cutout",item.get("cutoutAssetId").toString()));
+            item.put("maskKey",media.publishCatalog(storageCode,position,"mask",item.get("maskAssetId").toString()));
           }
           try {
             var payloadMap = (Map<String, Object>) json.readValue(op.get("Payload").toString(), Map.class);
@@ -342,7 +423,8 @@ public class AiService {
       db.exec("UPDATE PhienThuDoAo SET ThongBaoLoi=?,ThoiGianHoanTat=CURRENT_TIMESTAMP WHERE MaPhienThuDo=?",status,id);
     Object errorCode =
         remote.get("error") instanceof Map<?, ?> error ? error.get("errorCode") : null;
-    db.runtime().patch("operations", id, "StateName", status, "Simulated", simulated, "ResultJson", result == null ? null : json.writeValueAsString(result), "LastError", remote.get("error") == null ? null : Objects.toString(errorCode, "AI_JOB_FAILED"), "Attempts", 0, "NextAttemptAt", Timestamp.from(Instant.now().plusSeconds(3)).getTime());
+    boolean retryable = remote.get("error") instanceof Map<?, ?> e && Boolean.TRUE.equals(e.get("retryable"));
+    db.runtime().patch("operations", id, "StateName", status, "Simulated", simulated, "ResultJson", result == null ? null : json.writeValueAsString(result), "LastError", remote.get("error") == null ? null : Objects.toString(errorCode, "AI_JOB_FAILED"), "Retryable", retryable, "Attempts", 0, "NextAttemptAt", Timestamp.from(Instant.now().plusSeconds(3)).getTime());
   }
 
   /** Ảnh cutout cũng có thể dùng làm input garment nhưng role gửi AI luôn đúng. */
@@ -402,7 +484,7 @@ public class AiService {
   }
 
   /** Map độ dài catalog sang enum AI, không hardcode mọi sản phẩm là áo. */
-  private static String length(String value) {
+  static String length(String value) {
     return switch (value) {
       case "NGAN_TREN_GOI", "AO_CROPTOP" -> "SHORT";
       case "LUNG_NGANG_GOI", "MIDI_QUA_GOI" -> "MIDI";

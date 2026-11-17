@@ -40,7 +40,16 @@ public class RecommendationController {
   @Transactional
   public List<Map<String,Object>> list(@PathVariable String id, Authentication a) {
     session(id,a.getName());
-    return db.rows("SELECT MaGoiY AS recommendationId,MaBienTheGoiY AS variantId,DiemSauKhiPhoiKem AS projectedScore,LyDoGoiY AS reason,TrangThaiTuongTac AS status FROM GoiYPhoiDo WHERE MaPhienThuDo=? ORDER BY DiemSauKhiPhoiKem DESC,MaGoiY",id);
+    return db.rows("""
+        SELECT g.MaGoiY AS recommendationId,g.MaBienTheGoiY AS variantId,
+          p.MaSanPham AS productId,p.TenSanPham AS name,g.DiemSauKhiPhoiKem AS projectedScore,
+          g.LyDoGoiY AS reason,g.TrangThaiTuongTac AS status
+        FROM GoiYPhoiDo g JOIN BienTheSanPham b ON b.MaBienThe=g.MaBienTheGoiY
+          JOIN SanPham p ON p.MaSanPham=b.MaSanPham
+        WHERE g.MaPhienThuDo=? AND b.SoLuongTonKho>0 AND b.TrangThai='DANG_BAN'
+          AND p.TrangThaiSanPham='DANG_KINH_DOANH'
+        ORDER BY g.DiemSauKhiPhoiKem DESC,g.MaGoiY
+        """, id);
   }
   /** Tương tác chỉ tiến lên; thêm giỏ/mua phải có dữ liệu thực của chủ phiên. */
   @PatchMapping("/recommendations/{id}/interaction")

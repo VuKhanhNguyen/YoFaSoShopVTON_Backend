@@ -639,7 +639,7 @@ class BackendIntegrationTest {
   /** Gateway AI lưu kết quả bền, mock không thể duyệt publish, session có ownership. */
   @Test
   @Order(8)
-  void aiGateway() {
+  void aiGateway() throws Exception {
     personAsset = media.save(userId, "person", png, false).get("assetId").toString();
     String adminId =
         db.one("SELECT MaNguoiDung FROM NguoiDung WHERE TenDangNhap='admintest'")
@@ -689,6 +689,27 @@ class BackendIntegrationTest {
     assertEquals(true, result.get("simulated"));
     assertNotNull(((Map<?, ?>) result.get("result")).get("resultAssetId"));
     call("GET", "/assets/" + personAsset + "/content", other, null, 404);
+    var sample = new java.util.HashMap<>(body);
+    sample.put("shopModelId", "female");
+    call("POST", "/try-on/sessions", customer, sample, 422, "shop-both-sources");
+    sample.remove("personAssetId");
+    var shop = call("POST", "/try-on/sessions", customer, sample, 202, "shop-model-test");
+    String shopId = shop.get("resourceId").toString();
+    assertEquals(shopId, call("POST", "/try-on/sessions", customer, sample, 202, "shop-model-test").get("resourceId"));
+    var saved = call("GET", "/try-on/sessions/" + shopId, customer, null, 200);
+    assertEquals("female", saved.get("shopModelId"));
+    assertEquals(variant, saved.get("variantId"));
+    var pngThumb = java.net.http.HttpClient.newHttpClient().send(
+        java.net.http.HttpRequest.newBuilder(java.net.URI.create("http://127.0.0.1:" + port
+            + "/api/v1/assets/" + saved.get("personAssetId") + "/content?thumbnail=true"))
+            .header("Authorization", "Bearer " + customer).GET().build(),
+        java.net.http.HttpResponse.BodyHandlers.ofByteArray());
+    assertEquals(200, pngThumb.statusCode());
+    assertEquals(240, javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(pngThumb.body())).getHeight());
+    call("GET", "/assets/" + saved.get("personAssetId") + "/content?thumbnail=true", other, null, 404);
+    call("GET", "/assets/" + saved.get("personAssetId") + "/content", other, null, 404);
+    call("GET", "/try-on/sessions/" + shopId, other, null, 404);
+    db.runtime().patch("operations", shopId, "StateName", "CANCELLED");
   }
 
   /** Lỗi mạng giữ trạng thái đối soát, không báo GPU thất bại giả. */

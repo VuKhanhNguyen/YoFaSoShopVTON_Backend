@@ -126,6 +126,7 @@ export interface PaymentConfirmation {
 
 export interface Person {
   assetId: string;
+  variantId?: string;
   vtonCategory?: string;
 }
 
@@ -239,9 +240,10 @@ export interface Token {
 
 export interface TryOn {
   consent: boolean;
-  personAssetId: string;
+  personAssetId?: string;
   samples: number;
   seed: number;
+  shopModelId?: string;
   steps: number;
   variantId: string;
 }

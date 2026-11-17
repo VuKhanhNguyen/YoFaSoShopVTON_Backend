@@ -18,15 +18,22 @@ import tools.jackson.databind.json.JsonMapper;
 public class AiController {
   public record TryOn(
       @NotBlank @Size(max = 20) String variantId,
-      @NotBlank @Size(max = 64) String personAssetId,
+      @Size(min = 1, max = 64) String personAssetId,
       @Min(0) @Max(2147483647) int seed,
       @Min(10) @Max(50) int steps,
       @Min(1) @Max(4) int samples,
-      @AssertTrue(message = "Cần đồng ý xử lý ảnh để thử đồ.") boolean consent) {}
+      @AssertTrue(message = "Cần đồng ý xử lý ảnh để thử đồ.") boolean consent,
+      @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+      @Pattern(regexp = "female|male") String shopModelId) {
+    public TryOn(String variantId, String personAssetId, int seed, int steps, int samples, boolean consent) {
+      this(variantId, personAssetId, seed, steps, samples, consent, null);
+    }
+  }
 
   public record Person(
       @NotBlank @Size(max = 64) String assetId,
-      @Pattern(regexp = "upper_body|lower_body|dress") String vtonCategory) {}
+      @Pattern(regexp = "upper_body|lower_body|dress") String vtonCategory,
+      @Size(min = 1, max = 20) String variantId) {}
 
   public record Route(
       @NotNull @Pattern(regexp = "upper_body|lower_body|dress") String vtonCategory,
@@ -124,9 +131,16 @@ public class AiController {
 
   /** Tải ảnh cá nhân/kết quả riêng, không trả filesystem path. */
   @GetMapping("/assets/{id}/content")
-  public ResponseEntity<byte[]> content(Authentication a, @PathVariable String id) {
+  public ResponseEntity<byte[]> content(Authentication a, @PathVariable String id,
+      @RequestParam(defaultValue = "false") boolean thumbnail) {
     media.owned(id, a.getName());
-    return png(media.bytes(id));
+    byte[] bytes = thumbnail ? media.thumbnail(id) : media.bytes(id);
+    return ResponseEntity.ok()
+        .contentType(MediaType.IMAGE_PNG)
+        .contentLength(bytes.length)
+        .cacheControl(org.springframework.http.CacheControl.noStore())
+        .header("X-Content-Type-Options", "nosniff")
+        .body(bytes);
   }
 
   /** Xóa ảnh riêng chưa dùng trong lịch sử/catalog/job, tránh phá ảnh của phiên đang chạy. */
@@ -207,6 +221,16 @@ public class AiController {
     var body = new HashMap<String, Object>();
     body.put("assetId", media.remote(b.assetId()));
     if (b.vtonCategory() != null) body.put("vtonCategory", b.vtonCategory());
+    if (b.variantId() != null) {
+      var variant = db.one("""
+          SELECT p.PhanLoaiVTON,p.TieuLoaiTrangPhuc,p.ChieuDaiTrangPhuc
+          FROM BienTheSanPham b JOIN SanPham p ON b.MaSanPham=p.MaSanPham
+          WHERE b.MaBienThe=? AND b.TrangThai='DANG_BAN' AND p.TrangThaiSanPham='DANG_KINH_DOANH'
+          """, b.variantId());
+      body.put("vtonCategory", variant.get("PhanLoaiVTON"));
+      body.put("garmentSubtype", variant.get("TieuLoaiTrangPhuc"));
+      body.put("garmentLength", AiService.length(Db.text(variant, "ChieuDaiTrangPhuc")));
+    }
     return client.post("/internal/v1/persons/validate", body);
   }
 
@@ -227,9 +251,7 @@ public class AiController {
   /** Poll chỉ trả phiên do người dùng hiện tại tạo. */
   @GetMapping("/try-on/sessions/{id}")
   public Map<String, Object> session(Authentication a, @PathVariable String id) {
-    var op = service.operation(id, a.getName());
-    Problem.require("TRY_ON".equals(op.get("kind")), 404, "NOT_FOUND", "Không có phiên thử đồ.");
-    return op;
+    return service.session(id, a.getName());
   }
 
   /** Lịch sử cá nhân không chứa input ảnh của người khác. */
@@ -238,13 +260,7 @@ public class AiController {
       Authentication a,
       @RequestParam(defaultValue = "0") int page,
       @RequestParam(defaultValue = "20") int size) {
-    return db.rows(
-        "SELECT MaPhienThuDo AS sessionId,MaBienThe AS variantId,TrangThaiPhien AS"
-            + " status,DuongDanAnhKetQuaVTON AS resultAssetId,ThongBaoLoi AS error,ThoiGianKhoiTao AS createdAt FROM PhienThuDoAo WHERE MaNguoiDung=? ORDER"
-            + " BY ThoiGianKhoiTao DESC,MaPhienThuDo LIMIT ? OFFSET ?",
-        a.getName(),
-        size,
-        Db.offset(page, size));
+    return service.history(a.getName(), page, size);
   }
 
   /** Chỉ hủy job AI còn đang xếp hàng; đang render có thể trả 409. */
@@ -359,13 +375,13 @@ public class AiController {
       boolean isCover = refCoverCount == 0 && position == 0;
       long maxPosition = db.count("SELECT COALESCE(MAX(ThuTuHienThi), 0) FROM HinhAnhSanPham WHERE MaSanPham=?", product);
       int finalPos = (int) (maxPosition + position + 1);
-      String uploadedSource = "catalog/products/" + product.toLowerCase(Locale.ROOT) + "-" + bind.sourceAssetId() + "/";
+      String uploadedSource = Objects.toString(meta.get("sourceKey"), "catalog/products/" + product.toLowerCase(Locale.ROOT) + "-" + bind.sourceAssetId() + "/");
       if (!existing.isEmpty()) {
         db.exec("UPDATE HinhAnhSanPham SET DuongDanAnhBocNen=? WHERE MaSanPham=? AND DuongDanAnhGoc=?",
             cutout, product, original);
       } else {
         int updated = db.exec("UPDATE HinhAnhSanPham SET DuongDanAnhBocNen=? WHERE MaSanPham=? AND MaMauSac=? AND DuongDanAnhGoc LIKE ?",
-            cutout, product, sku.get("MaMauSac"), uploadedSource + "%");
+            cutout, product, sku.get("MaMauSac"), uploadedSource.endsWith("/") ? uploadedSource + "%" : uploadedSource);
         if (updated == 0) db.exec("INSERT INTO HinhAnhSanPham(MaHinhAnh,MaSanPham,DuongDanAnhGoc,DuongDanAnhBocNen,MaMauSac,LaAnhDaiDien,ThuTuHienThi) VALUES(?,?,?,?,?,?,?)",
             Db.id("HA"),product,original,cutout,sku.get("MaMauSac"),isCover,finalPos);
       }

@@ -19,6 +19,7 @@ import org.springframework.web.client.*;
 public class AiClient {
   private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(AiClient.class);
   private final RestClient client;
+  private final RestClient jobClient;
   private final String key;
 
   /** Cố định timeout kết nối/read, không tự retry POST để tránh sinh job trùng. */
@@ -26,7 +27,8 @@ public class AiClient {
       @Value("${app.ai.base-url}") String base,
       @Value("${app.ai.key}") String key,
       @Value("${app.ai.connect-timeout-seconds}") int connect,
-      @Value("${app.ai.read-timeout-seconds}") int read) {
+      @Value("${app.ai.read-timeout-seconds}") int read,
+      @Value("${app.ai.vton-http-timeout-seconds:15}") int vtonRead) {
     URI uri = URI.create(base);
     Problem.require(
         Set.of("http", "https").contains(uri.getScheme())
@@ -37,13 +39,12 @@ public class AiClient {
         "AI_CONFIG_INVALID",
         "Địa chỉ AI không hợp lệ.");
     this.key = key;
-    var factory =
-        new JdkClientHttpRequestFactory(
-            HttpClient.newBuilder()
+    var http = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(Duration.ofSeconds(connect))
                 .followRedirects(HttpClient.Redirect.NEVER)
-                .build());
+                .build();
+    var factory = new JdkClientHttpRequestFactory(http);
     factory.setReadTimeout(Duration.ofSeconds(read));
     client =
         RestClient.builder()
@@ -57,6 +58,9 @@ public class AiClient {
                   return execution.execute(request, body);
                 })
             .build();
+    var jobFactory = new JdkClientHttpRequestFactory(http);
+    jobFactory.setReadTimeout(Duration.ofSeconds(vtonRead));
+    jobClient = client.mutate().requestFactory(jobFactory).build();
   }
 
   /** Chỉ nhận ID do AI trả về đúng dạng hợp đồng, chặn chèn đường dẫn. */
@@ -72,9 +76,18 @@ public class AiClient {
   /** Gửi JSON tới endpoint nội bộ định sẵn. */
   @SuppressWarnings("unchecked")
   public Map<String, Object> post(String path, Object body) {
+    return post(client, path, body);
+  }
+
+  Map<String, Object> postVton(String path, Object body) {
+    return post(jobClient, path, body);
+  }
+
+  @SuppressWarnings("unchecked")
+  private Map<String, Object> post(RestClient http, String path, Object body) {
     configured();
     try {
-      return client
+      return http
           .post()
           .uri(path)
           .contentType(MediaType.APPLICATION_JSON)
@@ -139,9 +152,18 @@ public class AiClient {
   /** Poll/tìm lại job bằng ID nghiệp vụ khi submit bị timeout. */
   @SuppressWarnings("unchecked")
   public Map<String, Object> get(String path) {
+    return get(client, path);
+  }
+
+  Map<String, Object> getVton(String path) {
+    return get(jobClient, path);
+  }
+
+  @SuppressWarnings("unchecked")
+  private Map<String, Object> get(RestClient http, String path) {
     configured();
     try {
-      return client.get().uri(path).retrieve().body(Map.class);
+      return http.get().uri(path).retrieve().body(Map.class);
     } catch (RestClientException e) {
       throw error(e);
     }

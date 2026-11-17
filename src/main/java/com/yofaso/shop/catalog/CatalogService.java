@@ -56,6 +56,8 @@ public class CatalogService {
       int page,int limit,String material,String fit,String pattern,String status,boolean staff,
       String vtonCategory,String gender,String sort) {
     int offset=Db.offset(page,limit);
+    if ("all".equalsIgnoreCase(vtonCategory)) vtonCategory = "";
+    if ("all".equalsIgnoreCase(gender)) gender = "";
     Problem.require(q.length()<=100 && category.length()<=20 && size.length()<=10 && color.length()<=100 && material.length()<=100
         && min.signum()>=0 && max.compareTo(min)>=0,400,"FILTER_INVALID","Bộ lọc hoặc khoảng giá không hợp lệ.");
     Problem.require(fit.isEmpty() || Set.of("OM_SAT","SUONG_VUA","RONG_OVERSIZE").contains(fit),400,"FILTER_INVALID","Kiểu dáng không hợp lệ.");
@@ -337,7 +339,7 @@ public class CatalogService {
           productId);
     }
 
-    String productStorageCode = productId.toLowerCase(Locale.ROOT);
+    String productStorageCode = media.catalogStorageCode(productId);
 
     // Đồng bộ Mask nếu có maskAssetId
     if (body.maskAssetId() != null && !body.maskAssetId().isBlank()) {
@@ -346,7 +348,7 @@ public class CatalogService {
         var mask = media.owned(maskAsset, actor);
         Problem.require("mask".equals(mask.get("RoleName")) && !Boolean.TRUE.equals(mask.get("Simulated")),
             422, "MASK_INVALID", "Cần mask từ kết quả AI thật.");
-        String r2Mask = media.publishCatalog(productStorageCode + "-" + maskAsset, 1, "mask", maskAsset);
+        String r2Mask = media.publishCatalog(productStorageCode, 1, "mask", maskAsset);
         db.exec("UPDATE SanPham SET DuongDanMatNaVungThayDo=? WHERE MaSanPham=?", r2Mask, productId);
       } else {
         var product = db.one("SELECT DuongDanMatNaVungThayDo FROM SanPham WHERE MaSanPham=?", productId);
@@ -389,16 +391,16 @@ public class CatalogService {
         var source = media.owned(finalOriginal, actor);
         Problem.require((isRef ? "reference" : "garment").equals(source.get("RoleName")),
             422, "ASSET_ROLE_INVALID", "Ảnh không đúng loại dùng cho sản phẩm.");
-        String storageCode = productStorageCode + "-" + finalOriginal;
-        if (isRef) media.publishCatalog(storageCode, 1, "reference", finalOriginal);
-        finalOriginal = media.publishCatalog(storageCode, 1,
+        String storageCode = productStorageCode;
+        if (isRef) media.publishCatalog(storageCode, filePos, "reference", finalOriginal);
+        finalOriginal = media.publishCatalog(storageCode, filePos,
             isRef ? "reference_original" : "original", finalOriginal);
       }
       if (finalCutout != null && finalCutout.matches("[a-f0-9-]{32,36}")) {
         var cutout = media.owned(finalCutout, actor);
         Problem.require("cutout".equals(cutout.get("RoleName")) && !Boolean.TRUE.equals(cutout.get("Simulated")),
             422, "CUTOUT_INVALID", "Cần ảnh bóc nền từ kết quả AI thật.");
-        finalCutout = media.publishCatalog(productStorageCode + "-" + finalCutout, 1, "cutout", finalCutout);
+        finalCutout = media.publishCatalog(productStorageCode, filePos, "cutout", finalCutout);
       }
 
       String imgId = item.imageId();

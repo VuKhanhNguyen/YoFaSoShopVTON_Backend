@@ -24,11 +24,16 @@ public class AiController {
       @Min(1) @Max(4) int samples,
       @AssertTrue(message = "Cần đồng ý xử lý ảnh để thử đồ.") boolean consent,
       @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
-      @Pattern(regexp = "female|male") String shopModelId) {
+      @Pattern(regexp = "female|male|female_upper|male_upper") String shopModelId) {
     public TryOn(String variantId, String personAssetId, int seed, int steps, int samples, boolean consent) {
       this(variantId, personAssetId, seed, steps, samples, consent, null);
     }
   }
+
+  public record ReplacePerson(
+      @Size(min = 1, max = 64) String personAssetId,
+      @Pattern(regexp = "female|male|female_upper|male_upper") String shopModelId,
+      @AssertTrue(message = "Cần đồng ý xử lý ảnh để thử đồ.") boolean consent) {}
 
   public record Person(
       @NotBlank @Size(max = 64) String assetId,
@@ -87,14 +92,14 @@ public class AiController {
         422,
         "ASSET_ROLE_INVALID",
         "role: person, garment hoặc reference.");
+    boolean isAdmin = a.getAuthorities().stream()
+        .anyMatch(x -> x.getAuthority().equals("ROLE_SHOP_ADMIN"));
     Problem.require(
-        role.equals("person")
-            || a.getAuthorities().stream()
-                .anyMatch(x -> x.getAuthority().equals("ROLE_SHOP_ADMIN")),
+        role.equals("person") || isAdmin,
         403,
         "FORBIDDEN",
         "Chỉ chủ shop tải ảnh catalog.");
-    var saved = new LinkedHashMap<String, Object>(media.save(a.getName(), role, file.getBytes(), false));
+    var saved = new LinkedHashMap<String, Object>(media.save(a.getName(), role, file.getBytes(), false, !isAdmin));
     if ("garment".equals(role)) {
       try {
         var colorAnalysis = media.detectGarmentColor(file.getBytes());
@@ -133,6 +138,26 @@ public class AiController {
   @GetMapping("/assets/{id}/content")
   public ResponseEntity<byte[]> content(Authentication a, @PathVariable String id,
       @RequestParam(defaultValue = "false") boolean thumbnail) {
+    media.owned(id, a.getName());
+    byte[] bytes = thumbnail ? media.thumbnail(id) : media.bytes(id);
+    return ResponseEntity.ok()
+        .contentType(MediaType.IMAGE_PNG)
+        .contentLength(bytes.length)
+        .cacheControl(org.springframework.http.CacheControl.noStore())
+        .header("X-Content-Type-Options", "nosniff")
+        .body(bytes);
+  }
+
+  /** Hỗ trợ tải ảnh có key nhiều phân đoạn như tryon/{maPhien}/{uuid}--person.png. */
+  @GetMapping("/assets/tryon/**")
+  public ResponseEntity<byte[]> contentTryOn(jakarta.servlet.http.HttpServletRequest request, Authentication a,
+      @RequestParam(defaultValue = "false") boolean thumbnail) {
+    String path = (String) request.getAttribute(org.springframework.web.servlet.HandlerMapping.PATH_WITHIN_HANDLER_MAPPING_ATTRIBUTE);
+    String id = path.replaceFirst("^/api/v1/assets/", "");
+    if (id.endsWith("/content")) {
+      id = id.substring(0, id.length() - "/content".length());
+    }
+    id = java.net.URLDecoder.decode(id, java.nio.charset.StandardCharsets.UTF_8);
     media.owned(id, a.getName());
     byte[] bytes = thumbnail ? media.thumbnail(id) : media.bytes(id);
     return ResponseEntity.ok()
@@ -273,6 +298,19 @@ public class AiController {
   @PostMapping("/try-on/sessions/{id}/retry")
   public Map<String, Object> retry(Authentication a, @PathVariable String id) {
     return service.control(id, a.getName(), "retry");
+  }
+
+  /** Đổi ảnh người ngay trong phiên thử đồ đã thất bại mà không cần tạo phiên mới. */
+  @PostMapping("/try-on/sessions/{id}/replace-person")
+  public Map<String, Object> replacePerson(
+      Authentication a, @PathVariable String id, @Valid @RequestBody ReplacePerson b) {
+    return service.replacePerson(id, a.getName(), b);
+  }
+
+  /** Chuyển ảnh kết quả VTON đã hoàn tất thành ảnh person mới để khách thử tiếp món đối ứng. */
+  @PostMapping("/try-on/sessions/{id}/promote-result")
+  public Map<String, Object> promoteResult(Authentication a, @PathVariable String id) {
+    return service.promoteResultToPerson(id, a.getName());
   }
 
   /** Submit phân tích catalog, không công bố sản phẩm tự động. */

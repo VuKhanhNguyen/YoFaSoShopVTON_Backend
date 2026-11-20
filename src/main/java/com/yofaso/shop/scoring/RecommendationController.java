@@ -20,29 +20,61 @@ public class RecommendationController {
   private Map<String,Object> session(String id, String owner) {
     return db.one("SELECT MaBienThe,TrangThaiPhien FROM PhienThuDoAo WHERE MaPhienThuDo=? AND MaNguoiDung=? FOR UPDATE",id,owner);
   }
-  /** Quét hàng còn bán, chỉ ghi điểm >=90; gọi lại không xóa lịch sử tương tác. */
+  private void persistRecommendations(String sessionId, String variantId, boolean tucked) {
+    for (var suggestion : scoring.recommend(variantId, tucked)) {
+      String sku = suggestion.get("variantId").toString();
+      var old = db.rows("SELECT MaGoiY FROM GoiYPhoiDo WHERE MaPhienThuDo=? AND MaBienTheGoiY=?", sessionId, sku);
+      if (old.isEmpty()) {
+        db.exec(
+            "INSERT INTO GoiYPhoiDo(MaGoiY,MaPhienThuDo,MaBienTheGoiY,DiemSauKhiPhoiKem,LyDoGoiY) VALUES(?,?,?,?,?)",
+            Db.id("GY"),
+            sessionId,
+            sku,
+            suggestion.get("projectedScore"),
+            suggestion.get("reason"));
+      }
+    }
+  }
+
+  /** Quét hàng còn bán, chỉ ghi điểm >=85; gọi lại không xóa lịch sử tương tác. */
   @PostMapping("/sessions/{id}/recommendations")
   @Transactional
   public List<Map<String,Object>> generate(@PathVariable String id,
       @RequestParam(defaultValue="false") boolean tucked, Authentication a) {
     var s=session(id,a.getName());
     Problem.require("THANH_CONG".equals(s.get("TrangThaiPhien")),409,"SESSION_NOT_SCOREABLE","Cần phiên thật thành công.");
-    for(var suggestion:scoring.recommend(Db.text(s,"MaBienThe"),tucked)) {
-      String sku=suggestion.get("variantId").toString();
-      var old=db.rows("SELECT MaGoiY FROM GoiYPhoiDo WHERE MaPhienThuDo=? AND MaBienTheGoiY=?",id,sku);
-      if(old.isEmpty()) db.exec("INSERT INTO GoiYPhoiDo(MaGoiY,MaPhienThuDo,MaBienTheGoiY,DiemSauKhiPhoiKem,LyDoGoiY) VALUES(?,?,?,?,?)",
-          Db.id("GY"),id,sku,suggestion.get("projectedScore"),"Ước tính quy tắc catalog >=90; sơ vin="+tucked+". Không phải điểm đo từ ảnh.");
-    }
-    return list(id,a);
+    persistRecommendations(id, Db.text(s, "MaBienThe"), tucked);
+    return fetchList(id);
   }
-  /** Lịch sử riêng của chủ phiên; không coi tồn kho lúc gợi ý là cam kết giữ hàng. */
+
+  /** Lịch sử riêng của chủ phiên; tự động sinh gợi ý nếu phiên đã thành công nhưng chưa có bản ghi. */
   @GetMapping("/sessions/{id}/recommendations")
   @Transactional
   public List<Map<String,Object>> list(@PathVariable String id, Authentication a) {
-    session(id,a.getName());
+    var s = session(id,a.getName());
+    var rows = fetchList(id);
+    if (rows.isEmpty() && "THANH_CONG".equals(s.get("TrangThaiPhien"))) {
+      persistRecommendations(id, Db.text(s, "MaBienThe"), false);
+      rows = fetchList(id);
+    }
+    return rows;
+  }
+
+  private List<Map<String,Object>> fetchList(String id) {
     return db.rows("""
         SELECT g.MaGoiY AS recommendationId,g.MaBienTheGoiY AS variantId,
-          p.MaSanPham AS productId,p.TenSanPham AS name,g.DiemSauKhiPhoiKem AS projectedScore,
+          p.MaSanPham AS productId,p.TenSanPham AS name,p.PhanLoaiVTON AS vtonCategory,
+          b.KichCo AS size,b.TenMau AS colorName,b.MaMauSac AS colorHex,COALESCE(b.GiaKhuyenMai,b.GiaNiemYet) AS price,
+          COALESCE(
+            (SELECT CONCAT('/api/v1/catalog/images/', h.MaHinhAnh, '/content?kind=original')
+             FROM HinhAnhSanPham h WHERE h.MaSanPham=p.MaSanPham AND h.MaMauSac=b.MaMauSac
+               AND h.DuongDanAnhBocNen IS NOT NULL AND h.DuongDanAnhGoc NOT LIKE '%--ref%'
+             ORDER BY h.ThuTuHienThi,h.MaHinhAnh LIMIT 1),
+            (SELECT CONCAT('/api/v1/catalog/images/', h.MaHinhAnh, '/content?kind=original')
+             FROM HinhAnhSanPham h WHERE h.MaSanPham=p.MaSanPham
+             ORDER BY h.LaAnhDaiDien DESC,h.ThuTuHienThi,h.MaHinhAnh LIMIT 1)
+          ) AS imageUrl,
+          g.DiemSauKhiPhoiKem AS projectedScore,
           g.LyDoGoiY AS reason,g.TrangThaiTuongTac AS status
         FROM GoiYPhoiDo g JOIN BienTheSanPham b ON b.MaBienThe=g.MaBienTheGoiY
           JOIN SanPham p ON p.MaSanPham=b.MaSanPham

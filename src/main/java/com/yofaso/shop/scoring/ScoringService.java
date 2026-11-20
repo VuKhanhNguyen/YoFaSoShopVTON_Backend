@@ -17,6 +17,9 @@ public class ScoringService {
   public ScoringService(Db db, JsonMapper mapper) throws java.io.IOException {
     this.db = db;
     try (var input = getClass().getResourceAsStream("/scoring/workbook-rules.json")) {
+      if (input == null) {
+        throw new IllegalStateException("Không tìm thấy file tài nguyên /scoring/workbook-rules.json trên classpath.");
+      }
       workbook = mapper.readTree(input);
     }
   }
@@ -57,15 +60,18 @@ public class ScoringService {
         "OUTFIT_INVALID",
         "Chọn một đầm hoặc một áo và một quần/chân váy.");
     String prop = proportion(a, b, tucked);
-    int proportion = ruleScore(1, prop, 5);
+    var propRow = ruleRow(1, prop);
+    int proportion = Integer.parseInt(propRow.get(5).asText());
     List<String> colors =
         new ArrayList<>(Arrays.asList(Db.text(a, "MaMauSac").toUpperCase(Locale.ROOT).split(",")));
     if (b != null)
       colors.addAll(Arrays.asList(Db.text(b, "MaMauSac").toUpperCase(Locale.ROOT).split(",")));
-    int color = colorScore(colors);
+    var colorEval = evaluateColors(colors);
+    int color = colorEval.score();
     String pa = Db.text(a, "LoaiHoaTiet"), pb = b == null ? "VAI_TRON" : Db.text(b, "LoaiHoaTiet");
     String patternRule = pattern(pa, pb);
-    int pattern = ruleScore(4, patternRule, 3);
+    var patRow = ruleRow(4, patternRule);
+    int pattern = Integer.parseInt(patRow.get(3).asText());
     var penalties = new ArrayList<String>();
     if (prop.equals("PROP_09") || prop.equals("PROP_10")) penalties.add("PEN_03");
     if (prop.equals("PROP_11") || prop.equals("PROP_12")) penalties.add("PEN_07");
@@ -82,22 +88,52 @@ public class ScoringService {
     }
     if (color >= 60 && color <= 69 && hsv.stream().allMatch(h -> h[1] < .4 && h[2] < .65))
       penalties.add("PEN_01");
-    int penalty = penalties.stream().mapToInt(p -> Math.abs(ruleScore(5, p, 2))).sum();
+    var penaltyNotes = new ArrayList<String>();
+    int penalty = 0;
+    for (String pCode : penalties) {
+      var penRow = ruleRow(5, pCode);
+      penalty += Math.abs(Integer.parseInt(penRow.get(2).asText()));
+      penaltyNotes.add(cleanRuleText(penRow.get(3).asText()));
+    }
     int total =
         Math.max(
             0,
             Math.min(100, (int) Math.round(.4 * proportion + .4 * color + .2 * pattern - penalty)));
+    String tier = tier(total);
+    var tierNode = tierRow(tier);
+    String tierLabel = cleanRuleText(tierNode.get(2).asText());
+    String tierMeaning = cleanRuleText(tierNode.get(4).asText());
+    String tierAction = cleanRuleText(tierNode.get(5).asText());
+    String formula = String.format("S = 0.4·%d + 0.4·%d + 0.2·%d - %d", proportion, color, pattern, penalty);
+    String propNote = cleanRuleText(propRow.get(6).asText());
+    String colNote = colorEval.note();
+    String patNote = cleanRuleText(patRow.get(4).asText());
+    String penaltyNote = penaltyNotes.isEmpty() ? "" : String.join(" ", penaltyNotes);
+    String stylistComment = tierMeaning + " " + propNote + " " + tierAction;
+
+    var breakdown = Map.of(
+        "proportion", Map.of("score", proportion, "weight", "40%", "ruleCode", prop, "ruleName", cleanRuleText(propRow.get(1).asText()), "stylistNote", propNote),
+        "color", Map.of("score", color, "weight", "40%", "stylistNote", colNote),
+        "pattern", Map.of("score", pattern, "weight", "20%", "ruleCode", patternRule, "stylistNote", patNote),
+        "penalty", Map.of("score", penalty, "rules", penalties, "stylistNote", penaltyNote)
+    );
+
     return Map.ofEntries(
         Map.entry("total", total),
         Map.entry("proportion", proportion),
         Map.entry("color", color),
         Map.entry("pattern", pattern),
         Map.entry("penalty", penalty),
-        Map.entry("tier", tier(total)),
+        Map.entry("tier", tier),
+        Map.entry("tierLabel", tierLabel),
+        Map.entry("formula", formula),
+        Map.entry("breakdown", breakdown),
+        Map.entry("stylistComment", stylistComment),
+        Map.entry("aiModelSource", "WORKBOOK_RULES_JSON"),
         Map.entry("proportionRule", prop),
         Map.entry("patternRule", patternRule),
         Map.entry("penaltyRules", penalties),
-        Map.entry("source", "ScoringTable.xlsx; catalog rules v1"),
+        Map.entry("source", workbook.path("source").asText("ScoringTable.xlsx")),
         Map.entry("assessmentType", "CATALOG_RULE_ESTIMATE"),
         Map.entry(
             "assumptions",
@@ -107,18 +143,49 @@ public class ScoringService {
                     + " chuẩn.",
                 "Chưa chấm phụ kiện, chất liệu gân, họa tiết chìm do catalog chưa có field tương"
                     + " ứng.")),
-        Map.entry(
-            "advice",
-            total >= 85
-                ? "Bản phối có tỉ lệ và màu sắc hài hòa theo quy tắc catalog."
-                : "Bạn có thể thử đổi phom hoặc màu của một món để bản phối cân đối hơn."));
+        Map.entry("advice", stylistComment));
+  }
+
+  /** Thông tin đơn lẻ từ workbook-rules.json khi khách mới thử 1 món upper/lower chưa ghép set. */
+  public Map<String, Object> singleItemPreview(String variantId) {
+    var g = garment(variantId);
+    List<String> colors = Arrays.asList(Db.text(g, "MaMauSac").toUpperCase(Locale.ROOT).split(","));
+    var colorEval = evaluateColors(colors);
+    String pa = Db.text(g, "LoaiHoaTiet");
+    String patternRule = pattern(pa, "VAI_TRON");
+    var patRow = ruleRow(4, patternRule);
+    return Map.of(
+        "evaluated", false,
+        "singleItem", true,
+        "colorName", Db.text(g, "TenMau"),
+        "colorNote", colorEval.note(),
+        "patternRule", patternRule,
+        "patternNote", cleanRuleText(patRow.get(4).asText()),
+        "source", workbook.path("source").asText("ScoringTable.xlsx"));
+  }
+
+  /** Làm giàu thông tin hiển thị từ workbook-rules.json cho phiên đã lưu điểm. */
+  public Map<String, Object> enrichSavedSession(String tier, String propRule) {
+    var out = new LinkedHashMap<String, Object>();
+    if (tier != null && !tier.isBlank()) {
+      var t = tierRow(tier);
+      if (t != null) out.put("tierLabel", cleanRuleText(t.get(2).asText()));
+    }
+    if (propRule != null && !propRule.isBlank()) {
+      try {
+        var p = ruleRow(1, propRule);
+        out.put("proportionNote", cleanRuleText(p.get(6).asText()));
+      } catch (IllegalStateException ignored) {}
+    }
+    return out;
   }
 
   /** Chọn một trong 12 quy tắc tỷ lệ; fallback casual được công khai như ước lượng. */
   private String proportion(Map<String, Object> a, Map<String, Object> b, boolean tucked) {
     if (b == null) {
+      String waist = Db.text(a, "LoaiCapQuan");
       Problem.require(
-          "CAP_CAO".equals(a.get("LoaiCapQuan")),
+          "CAP_CAO".equals(waist) || "KHONG_AP_DUNG".equals(waist) || waist.isBlank(),
           422,
           "SCORING_METADATA_INCOMPLETE",
           "Đầm cần xác nhận chiết eo cao trước khi dùng PROP_06.");
@@ -154,15 +221,26 @@ public class ScoringService {
     return "PAT_07";
   }
 
-  /** Tra điểm trực tiếp theo mã dòng Excel để tránh rải hằng số trong code. */
-  private int ruleScore(int sheet, String code, int column) {
+  private record ColorEval(int score, String note) {}
+
+  private static String cleanRuleText(String text) {
+    return text == null ? "" : text.replaceAll("\\s*\\n\\s*", " ").replaceAll("\\s{2,}", " ").trim();
+  }
+
+  private JsonNode ruleRow(int sheet, String code) {
     for (var row : workbook.get("sheets").get(sheet))
-      if (row.get(0).asText().equals(code)) return Integer.parseInt(row.get(column).asText());
+      if (row.get(0).asText().equals(code)) return row;
     throw new IllegalStateException("Rule missing: " + code);
   }
 
-  /** Màu một món không có cặp đối chiếu được tính như cùng màu trong matrix. */
-  private int colorScore(List<String> colors) {
+  private JsonNode tierRow(String tierCode) {
+    for (var row : workbook.get("sheets").get(0))
+      if (row.get(1).asText().equals(tierCode)) return row;
+    return workbook.get("sheets").get(0).get(1);
+  }
+
+  /** Màu một món không có cặp đối chiếu được tính như cùng màu trong matrix; đọc nhãn từ JSON. */
+  private ColorEval evaluateColors(List<String> colors) {
     var unique = colors.stream().distinct().sorted().toList();
     if (unique.size() >= 3) {
       for (var row : workbook.get("sheets").get(3)) {
@@ -172,23 +250,36 @@ public class ScoringService {
           var m = java.util.regex.Pattern.compile("#[A-Fa-f0-9]{6}").matcher(row.get(i).asText());
           if (m.find()) set.add(m.group().toUpperCase(Locale.ROOT));
         }
-        if (set.equals(new TreeSet<>(unique))) return Integer.parseInt(row.get(7).asText());
+        if (set.equals(new TreeSet<>(unique))) {
+          return new ColorEval(
+              Integer.parseInt(row.get(7).asText()),
+              cleanRuleText(row.get(1).asText()) + ": " + cleanRuleText(row.get(8).asText()));
+        }
       }
     }
+    var matrix = workbook.get("sheets").get(2);
+    var groupLabels = new LinkedHashSet<String>();
     int sum = 0, count = 0;
-    for (int i = 0; i < colors.size(); i++)
+    for (int i = 0; i < colors.size(); i++) {
       for (int j = i + 1; j < colors.size(); j++) {
-        sum += pair(colors.get(i), colors.get(j));
+        var matched = pairMatch(matrix, colors.get(i), colors.get(j));
+        sum += matched.score();
+        groupLabels.add(matched.rowLabel());
+        groupLabels.add(matched.colLabel());
         count++;
       }
-    return count == 0
-        ? pair(colors.getFirst(), colors.getFirst())
-        : Math.round((float) sum / count);
+    }
+    if (count == 0) {
+      var matched = pairMatch(matrix, colors.getFirst(), colors.getFirst());
+      return new ColorEval(matched.score(), matched.rowLabel());
+    }
+    return new ColorEval(Math.round((float) sum / count), String.join(" + ", groupLabels));
   }
 
+  private record PairMatch(int score, String rowLabel, String colLabel) {}
+
   /** Giữ tính định hướng áo/quần của matrix, không tự làm đối xứng bảng. */
-  private int pair(String a, String b) {
-    var matrix = workbook.get("sheets").get(2);
+  private PairMatch pairMatch(JsonNode matrix, String a, String b) {
     int row = 1, col = 1;
     long rd = Long.MAX_VALUE, cd = Long.MAX_VALUE;
     for (int i = 1; i < matrix.size(); i++) {
@@ -205,7 +296,10 @@ public class ScoringService {
         col = j;
       }
     }
-    return Integer.parseInt(matrix.get(row).get(col).asText());
+    return new PairMatch(
+        Integer.parseInt(matrix.get(row).get(col).asText()),
+        cleanRuleText(matrix.get(row).get(0).asText()),
+        cleanRuleText(matrix.get(0).get(col).asText()));
   }
 
   /** Lấy HEX trong nhãn Excel đã đối chiếu. */
@@ -239,7 +333,19 @@ public class ScoringService {
         : total >= 70 ? "ACCEPTABLE" : total >= 50 ? "NEEDS_ADJUSTMENT" : "NOT_RECOMMENDED";
   }
 
-  /** Quét tối đa 200 SKU có tồn và đúng nhóm đối ứng, không bịa sản phẩm hoặc ép đủ 90. */
+  private String rootGenderCategory(String categoryId) {
+    String current = categoryId;
+    var visited = new HashSet<String>();
+    while (current != null && !current.isBlank() && visited.add(current)) {
+      if ("DM000001".equals(current) || "DM000002".equals(current)) return current;
+      var rows = db.rows("SELECT MaDanhMucCha FROM DanhMuc WHERE MaDanhMuc=?", current);
+      if (rows.isEmpty()) break;
+      current = Db.text(rows.getFirst(), "MaDanhMucCha");
+    }
+    return "";
+  }
+
+  /** Quét tối đa 200 SKU có tồn, đúng nhóm đối ứng và cùng giới tính; trả URL ảnh catalog chuẩn. */
   public List<Map<String, Object>> recommend(String variant, boolean tucked) {
     var g = garment(variant);
     String target =
@@ -248,26 +354,46 @@ public class ScoringService {
           case "lower_body" -> "upper_body";
           default -> "none";
         };
+    String genderRoot = rootGenderCategory(Db.text(g, "MaDanhMuc"));
+    String genderFilter = genderRoot.isEmpty()
+        ? ""
+        : " AND p.MaDanhMuc IN (SELECT d.MaDanhMuc FROM DanhMuc d WHERE d.MaDanhMuc=? OR d.MaDanhMucCha=?"
+            + " OR d.MaDanhMucCha IN (SELECT s.MaDanhMuc FROM DanhMuc s WHERE s.MaDanhMucCha=?))";
+    var sqlParams = new ArrayList<Object>();
+    sqlParams.add(target);
+    if (!genderRoot.isEmpty()) {
+      sqlParams.add(genderRoot);
+      sqlParams.add(genderRoot);
+      sqlParams.add(genderRoot);
+    }
     var result = new ArrayList<Map<String, Object>>();
     for (var row :
         db.rows(
-            "SELECT b.MaBienThe,p.TenSanPham FROM BienTheSanPham b JOIN SanPham p ON"
-                + " p.MaSanPham=b.MaSanPham WHERE b.SoLuongTonKho>0 AND b.TrangThai='DANG_BAN' AND"
-                + " p.TrangThaiSanPham='DANG_KINH_DOANH' AND p.PhanLoaiVTON=? ORDER BY b.MaBienThe"
-                + " LIMIT 200",
-            target)) {
+            "SELECT b.MaBienThe,b.TenMau,COALESCE(b.GiaKhuyenMai,b.GiaNiemYet) AS price,p.MaSanPham,p.TenSanPham,"
+                + " (SELECT MaHinhAnh FROM HinhAnhSanPham WHERE MaSanPham=p.MaSanPham ORDER BY LaAnhDaiDien DESC,ThuTuHienThi,MaHinhAnh LIMIT 1) AS MaHinhAnh"
+                + " FROM BienTheSanPham b JOIN SanPham p ON p.MaSanPham=b.MaSanPham"
+                + " WHERE b.SoLuongTonKho>0 AND b.TrangThai='DANG_BAN' AND p.TrangThaiSanPham='DANG_KINH_DOANH'"
+                + " AND p.PhanLoaiVTON=?" + genderFilter + " ORDER BY b.MaBienThe LIMIT 200",
+            sqlParams.toArray())) {
       var score = evaluate(variant, Db.text(row, "MaBienThe"), tucked);
-      if ((int) score.get("total") >= 90)
-        result.add(
-            Map.of(
-                "variantId",
-                row.get("MaBienThe"),
-                "name",
-                row.get("TenSanPham"),
-                "projectedScore",
-                score.get("total"),
-                "assessmentType",
-                "CATALOG_RULE_ESTIMATE"));
+      int proj = (int) score.get("total");
+      if (proj >= 85) {
+        String imageId = Db.text(row, "MaHinhAnh");
+        String imageUrl = imageId.isEmpty() ? null : "/api/v1/catalog/images/" + imageId + "/content?kind=original";
+        String reason = Db.text(score, "stylistComment");
+        var map = new LinkedHashMap<String, Object>();
+        map.put("variantId", row.get("MaBienThe"));
+        map.put("productId", row.get("MaSanPham"));
+        map.put("name", row.get("TenSanPham"));
+        map.put("productName", row.get("TenSanPham"));
+        map.put("colorName", row.get("TenMau"));
+        map.put("price", row.get("price"));
+        map.put("imageUrl", imageUrl);
+        map.put("projectedScore", proj);
+        map.put("reason", reason);
+        map.put("assessmentType", "CATALOG_RULE_ESTIMATE");
+        result.add(map);
+      }
     }
     result.sort(Comparator.comparingInt(x -> -(int) x.get("projectedScore")));
     return result.stream().limit(10).toList();

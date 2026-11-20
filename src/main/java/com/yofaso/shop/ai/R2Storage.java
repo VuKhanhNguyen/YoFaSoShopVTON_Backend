@@ -35,6 +35,9 @@ public class R2Storage implements AutoCloseable {
       .overrideConfiguration(c -> c.apiCallTimeout(java.time.Duration.ofSeconds(30))
         .apiCallAttemptTimeout(java.time.Duration.ofSeconds(15))).build();
   }
+  public boolean isConfigured() {
+    return client != null;
+  }
   public String upload(String key, byte[] bytes) {
     put(key, bytes, false);
     return key;
@@ -45,7 +48,19 @@ public class R2Storage implements AutoCloseable {
   }
 
   private String bucketFor(String key) {
-    return key.startsWith("catalog-processing/") ? privateBucket : bucket;
+    return (key.startsWith("catalog-processing/") || key.startsWith("tryon/")) ? privateBucket : bucket;
+  }
+
+  public byte[] get(String key) {
+    Problem.require(client != null, 503, "R2_NOT_CONFIGURED", "Cấu hình R2 trước khi đọc file.");
+    try (var object = client.getObject(r -> r.bucket(bucketFor(key)).key(key))) {
+      return object.readAllBytes();
+    } catch (S3Exception e) {
+      if (e.statusCode() == 404) throw new Problem(404, "NOT_FOUND", "Không tìm thấy ảnh trên R2.");
+      throw new Problem(503, "R2_READ_FAILED", "Chưa kiểm tra được ảnh trên R2.");
+    } catch (java.io.IOException | RuntimeException e) {
+      throw new Problem(503, "R2_READ_FAILED", "Chưa kiểm tra được ảnh trên R2.");
+    }
   }
 
   public List<String> catalogKeys(String prefix) {
@@ -75,7 +90,9 @@ public class R2Storage implements AutoCloseable {
 
   private boolean put(String key, byte[] bytes, boolean createOnly) {
     Problem.require(client!=null,503,"R2_NOT_CONFIGURED","Cấu hình R2 trước khi đồng bộ kết quả catalog thật.");
-    Problem.require((key.matches("(catalog|catalog-processing)/products/[A-Za-z0-9_/-]+[.]png") || key.matches("avatars/[A-Za-z0-9_/-]+[.]png")) && !key.contains(".."),500,"R2_KEY_INVALID","Key R2 không hợp lệ.");
+    Problem.require((key.matches("(catalog|catalog-processing)/products/[A-Za-z0-9_/\\-]+[.]png")
+        || key.matches("avatars/[A-Za-z0-9_/\\-]+[.]png")
+        || key.matches("tryon/[A-Za-z0-9_\\-]+/[A-Za-z0-9_\\-]+[.]png")) && !key.contains(".."),500,"R2_KEY_INVALID","Key R2 không hợp lệ.");
     try {
       var request = PutObjectRequest.builder().bucket(bucketFor(key)).key(key).contentType("image/png");
       if (createOnly) request.ifNoneMatch("*");

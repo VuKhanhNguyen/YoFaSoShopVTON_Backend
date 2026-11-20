@@ -63,6 +63,15 @@ public class MediaService {
    */
   @org.springframework.transaction.annotation.Transactional
   public Map<String, Object> save(String owner, String role, byte[] bytes, boolean simulated) {
+    return save(owner, role, bytes, simulated, "person".equals(role));
+  }
+
+  @org.springframework.transaction.annotation.Transactional
+  public Map<String, Object> save(String owner, String role, byte[] bytes, boolean simulated, boolean enforceQuota) {
+    return saveInternal(owner, role, bytes, simulated, enforceQuota);
+  }
+
+  private Map<String, Object> saveInternal(String owner, String role, byte[] bytes, boolean simulated, boolean enforceQuota) {
     boolean source = Set.of("person", "garment", "reference").contains(role);
     if (source) db.one("SELECT MaNguoiDung FROM NguoiDung WHERE MaNguoiDung=? FOR UPDATE", owner);
     Problem.require(
@@ -70,13 +79,16 @@ public class MediaService {
         413,
         "UPLOAD_TOO_LARGE",
         "Ảnh rỗng hoặc vượt 60 MB.");
-    if (source)
+    if ("person".equals(role) && enforceQuota)
       Problem.require(
-          db.runtime().find("media", r -> owner.equals(r.get("OwnerId")) && Set.of("person","garment","reference").contains(r.get("RoleName"))).size()
+          db.runtime().find("media", r -> owner.equals(r.get("OwnerId"))
+              && "person".equals(r.get("RoleName"))
+              && r.get("ShopModelId") == null
+              && r.get("R2Key") == null).size()
               < 100,
           429,
           "ASSET_QUOTA",
-          "Đã đạt giới hạn 100 ảnh nguồn cho tài khoản.");
+          "Đã đạt giới hạn 100 ảnh người dùng cho tài khoản.");
     try (var stream = ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
       var readers = ImageIO.getImageReaders(stream);
       Problem.require(readers.hasNext(), 415, "IMAGE_INVALID", "Chỉ nhận ảnh PNG hoặc JPEG thực.");
@@ -122,34 +134,64 @@ public class MediaService {
   }
 
   synchronized String shopPerson(String owner, String model) {
-    Problem.require(Set.of("female", "male").contains(model), 422, "SHOP_MODEL_INVALID", "Mẫu shop không hợp lệ.");
+    Problem.require(Set.of("female", "male", "female_upper", "male_upper").contains(model), 422, "SHOP_MODEL_INVALID", "Mẫu shop không hợp lệ.");
     var existing = db.runtime().find("media", row -> owner.equals(row.get("OwnerId"))
         && "person".equals(row.get("RoleName")) && model.equals(row.get("ShopModelId")));
     try (var input = new org.springframework.core.io.ClassPathResource("vton-models/" + model + ".png").getInputStream()) {
       byte[] bytes = input.readAllBytes();
-      if (!existing.isEmpty()) {
-        String existingId = Db.text(existing.getFirst(), "AssetId");
+      for (var row : existing) {
+        String existingId = Db.text(row, "AssetId");
         Path existingFile = root.resolve(existingId + ".png");
-        if (Files.exists(existingFile) && Files.size(existingFile) == bytes.length) {
+        if (!Files.exists(existingFile)) continue;
+        // ImageIO nén lại PNG nên kích thước file lưu khác bytes.length ảnh gốc; so theo SourceBytes để tránh tạo bản trùng mỗi lượt thử đồ.
+        Object recorded = row.get("SourceBytes");
+        if ((recorded instanceof Number n && n.longValue() == bytes.length)
+            || (recorded == null && Files.size(existingFile) > 0)) {
+          if (recorded == null) db.runtime().patch("media", existingId, "SourceBytes", bytes.length);
           return existingId;
         }
       }
-      String id = Db.text(save(owner, "person", bytes, false), "assetId");
-      db.runtime().patch("media", id, "ShopModelId", model);
+      String id = Db.text(saveInternal(owner, "person", bytes, false, false), "assetId");
+      db.runtime().patch("media", id, "ShopModelId", model, "SourceBytes", bytes.length);
       return id;
     } catch (IOException e) {
       throw new Problem(503, "SHOP_MODEL_UNAVAILABLE", "Ảnh mẫu shop chưa sẵn sàng.");
     }
   }
 
+  public void registerR2Asset(String owner, String key, String role, String localFile) {
+    db.runtime().put("media", key, RuntimeState.row("AssetId", key, "OwnerId", owner, "RoleName", role, "LocalFile", localFile, "R2Key", key));
+  }
+
+  public boolean isR2Configured() {
+    return r2 != null && r2.isConfigured();
+  }
+
+  public void uploadR2(String key, byte[] bytes) {
+    if (r2 != null) r2.upload(key, bytes);
+  }
+
   String readableAsset(String id, String owner) {
-    if (id.isBlank()) return null;
+    if (id == null || id.isBlank()) return null;
     var row = db.runtime().findById("media", id);
-    return row != null && owner.equals(row.get("OwnerId")) ? id : null;
+    if (row != null && owner.equals(row.get("OwnerId"))) return id;
+    if (id.startsWith("tryon/")) {
+      long count = db.count(
+          "SELECT COUNT(*) FROM PhienThuDoAo WHERE (DuongDanAnhNguoiDung=? OR DuongDanAnhKetQuaVTON=?) AND MaNguoiDung=?",
+          id, id, owner);
+      if (count > 0) return id;
+    }
+    return null;
   }
 
   String shopModelId(String id) {
-    return Db.text(db.runtime().get("media", id), "ShopModelId");
+    var row = db.runtime().findById("media", id);
+    return row == null ? "" : Db.text(row, "ShopModelId");
+  }
+
+  String sourceSessionId(String id) {
+    var row = db.runtime().findById("media", id);
+    return row == null ? "" : Db.text(row, "SourceSessionId");
   }
 
   byte[] thumbnail(String id) {
@@ -179,29 +221,44 @@ public class MediaService {
 
   private Map<String,Object> ownedRecord(String id, String owner) {
     var row = db.runtime().get("media", id);
-    Problem.require(owner.equals(row.get("OwnerId")),404,"NOT_FOUND","Không tìm thấy ảnh.");
-    return row;
+    if (row != null && owner.equals(row.get("OwnerId"))) return row;
+    if (id != null && id.startsWith("tryon/")) {
+      var sessionRows = db.rows(
+          "SELECT MaNguoiDung FROM PhienThuDoAo WHERE (DuongDanAnhNguoiDung=? OR DuongDanAnhKetQuaVTON=?) AND MaNguoiDung=?",
+          id, id, owner);
+      if (!sessionRows.isEmpty()) {
+        return RuntimeState.row("AssetId", id, "OwnerId", owner, "RoleName", id.contains("--result") ? "result" : "person");
+      }
+    }
+    Problem.require(false,404,"NOT_FOUND","Không tìm thấy ảnh.");
+    return null;
   }
 
   /** Đọc file từ filename do server tạo, không từ đường dẫn client truyền. */
   public byte[] bytes(String id) {
-    var row = db.runtime().get("media", id);
-    Path p;
+    var row = db.runtime().findById("media", id);
+    Path p = null;
     if (row != null && !row.isEmpty() && !Db.text(row, "LocalFile").isBlank()) {
       p = root.resolve(Db.text(row, "LocalFile")).normalize();
     } else if (Files.isRegularFile(root.resolve(id + ".png"))) {
       p = root.resolve(id + ".png");
     } else if (Files.isRegularFile(root.resolve(id))) {
       p = root.resolve(id);
-    } else {
-      throw new Problem(503, "ASSET_UNAVAILABLE", "Ảnh không còn trên storage: " + id);
     }
-    Problem.require(p.startsWith(root), 500, "STORAGE_INVALID", "Storage không hợp lệ.");
-    try {
-      return Files.readAllBytes(p);
-    } catch (IOException e) {
-      throw new Problem(503, "ASSET_UNAVAILABLE", "Ảnh không còn trên storage.");
+    if (p != null && Files.isRegularFile(p) && p.startsWith(root)) {
+      try {
+        return Files.readAllBytes(p);
+      } catch (IOException ignored) {}
     }
+    if (id != null && (id.startsWith("tryon/") || (row != null && Db.text(row, "R2Key").startsWith("tryon/")))) {
+      String key = id.startsWith("tryon/") ? id : Db.text(row, "R2Key");
+      if (r2.isConfigured()) {
+        try {
+          return r2.get(key);
+        } catch (Exception ignored) {}
+      }
+    }
+    throw new Problem(503, "ASSET_UNAVAILABLE", "Ảnh không còn trên storage: " + id);
   }
 
   /** Gọi AI Service phân tích màu sản phẩm; fallback rỗng nếu AI bận. */
@@ -251,20 +308,27 @@ public class MediaService {
     }
   }
 
-  /** Upload ảnh đã lưu sang AI một lần rồi lưu mapping ID bền vững. */
+  /** Upload ảnh đã lưu sang AI một lần rồi lưu mapping ID bền vững; tự upload lại nếu AI server mới trả 404. */
   public String remote(String id) {
     var row = db.runtime().get("media", id);
     String remote = Db.text(row, "AiAssetId");
-    if (remote.isEmpty()) {
-      String role = Db.text(row, "RoleName");
-      Problem.require(
-          Set.of("person", "garment", "reference").contains(role),
-          422,
-          "ASSET_ROLE_INVALID",
-          "Ảnh kết quả không được dùng sai vai trò.");
-      remote = AiClient.id(Objects.toString(ai.upload(bytes(id), role).get("assetId"), ""));
-      db.runtime().patch("media", id, "AiAssetId", remote);
+    if (!remote.isEmpty()) {
+      try {
+        ai.getVton("/internal/v1/assets/" + AiClient.id(remote));
+        return remote;
+      } catch (Problem e) {
+        if (e.status != 404) throw e;
+        log.info("Cached AiAssetId {} missing on AI server (404); re-uploading local asset {}", remote, id);
+      }
     }
+    String role = Db.text(row, "RoleName");
+    Problem.require(
+        Set.of("person", "garment", "reference").contains(role),
+        422,
+        "ASSET_ROLE_INVALID",
+        "Ảnh kết quả không được dùng sai vai trò.");
+    remote = AiClient.id(Objects.toString(ai.upload(bytes(id), role).get("assetId"), ""));
+    db.runtime().patch("media", id, "AiAssetId", remote);
     return remote;
   }
 

@@ -4,6 +4,7 @@ import com.yofaso.shop.common.*;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.*;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -18,21 +19,36 @@ public class AiService {
   private final MediaService media;
   private final JsonMapper json;
   private final Idempotency keys;
+  private final com.yofaso.shop.scoring.ScoringService scoring;
   private final boolean enabled;
 
-  /** Không load model trong JVM; mọi inference chạy trong FastAPI/worker. */
+  /** Tương thích kiểm thử không dùng scoring. */
   public AiService(
       Db db,
       AiClient ai,
       MediaService media,
       JsonMapper json,
       Idempotency keys,
+      boolean enabled) {
+    this(db, ai, media, json, keys, null, enabled);
+  }
+
+  /** Không load model trong JVM; mọi inference chạy trong FastAPI/worker. */
+  @Autowired
+  public AiService(
+      Db db,
+      AiClient ai,
+      MediaService media,
+      JsonMapper json,
+      Idempotency keys,
+      com.yofaso.shop.scoring.ScoringService scoring,
       @Value("${app.ai.enabled}") boolean enabled) {
     this.db = db;
     this.ai = ai;
     this.media = media;
     this.json = json;
     this.keys = keys;
+    this.scoring = scoring;
     this.enabled = enabled;
   }
 
@@ -44,9 +60,13 @@ public class AiService {
         422, "PERSON_SOURCE_REQUIRED", "Chọn đúng một ảnh cá nhân hoặc mẫu shop.");
     String old = keys.existing(owner, "TRY_ON", key, b);
     if (old != null) return operation(old, owner);
-    if (b.personAssetId() != null)
-      Problem.require("person".equals(media.owned(b.personAssetId(), owner).get("RoleName")),
+    String sourceSessionId = "";
+    if (b.personAssetId() != null) {
+      var ownedPerson = media.owned(b.personAssetId(), owner);
+      Problem.require("person".equals(ownedPerson.get("RoleName")),
           422, "ASSET_ROLE_INVALID", "Cần ảnh tải lên với role person.");
+      sourceSessionId = Db.text(ownedPerson, "SourceSessionId");
+    }
     var v =
         db.one(
             "SELECT b.MaSanPham,p.TenSanPham,p.ChatLieu,p.PhanLoaiVTON,p.TieuLoaiTrangPhuc,p.ChieuDaiTrangPhuc,p.KieuDang,p.LoaiCapQuan,p.LoaiHoaTiet,b.KichCo,b.TenMau,b.MaMauSac FROM"
@@ -93,17 +113,13 @@ public class AiService {
     payload.put("size", v.get("KichCo"));
     payload.put("colorName", v.get("TenMau"));
     payload.put("colorHex", v.get("MaMauSac"));
-    var referenceKeys = db.rows("""
-        SELECT h.DuongDanAnhGoc AS referenceKey FROM HinhAnhSanPham h
-        JOIN BienTheSanPham b ON h.MaSanPham=b.MaSanPham
-        WHERE b.MaBienThe=? AND h.DuongDanAnhGoc REGEXP '--ref[0-9]+--'
-        ORDER BY (h.MaMauSac=b.MaMauSac) DESC,h.LaAnhDaiDien DESC,h.ThuTuHienThi,h.MaHinhAnh LIMIT 2
-        """, b.variantId()).stream().map(row -> Db.text(row, "referenceKey")).distinct().toList();
-    if (!referenceKeys.isEmpty()) payload.put("referenceKeys", referenceKeys);
     payload.put("seed", b.seed());
     payload.put("steps", b.steps());
     payload.put("samples", b.samples());
     insert(session, owner, "TRY_ON", session, payload);
+    if (!sourceSessionId.isBlank()) {
+      db.runtime().patch("operations", session, "SourceSessionId", sourceSessionId);
+    }
     keys.complete(owner, "TRY_ON", key, session);
     return operation(session, owner);
   }
@@ -169,14 +185,67 @@ public class AiService {
 
   private static final String SESSION_SELECT = """
       SELECT t.MaPhienThuDo AS sessionId,t.MaBienThe AS variantId,p.MaSanPham AS productId,
-        p.TenSanPham AS productName,p.PhanLoaiVTON AS vtonCategory,t.TrangThaiPhien AS status,
+        p.MaDanhMuc AS categoryId,p.TenSanPham AS productName,p.PhanLoaiVTON AS vtonCategory,
+        b.MaQuanLyHangHoa AS sku,b.KichCo AS size,b.TenMau AS colorName,b.MaMauSac AS colorHex,
+        t.LoaiKhungAnhNguoi AS personFrame,
+        COALESCE(
+          (SELECT CONCAT('/api/v1/catalog/images/', h.MaHinhAnh, '/content?kind=original')
+           FROM HinhAnhSanPham h WHERE h.MaSanPham=p.MaSanPham AND h.MaMauSac=b.MaMauSac
+             AND h.DuongDanAnhBocNen IS NOT NULL AND h.DuongDanAnhGoc NOT LIKE '%--ref%'
+           ORDER BY h.ThuTuHienThi,h.MaHinhAnh LIMIT 1),
+          (SELECT CONCAT('/api/v1/catalog/images/', h.MaHinhAnh, '/content?kind=original')
+           FROM HinhAnhSanPham h WHERE h.MaSanPham=p.MaSanPham
+             AND h.DuongDanAnhBocNen IS NOT NULL AND h.DuongDanAnhGoc NOT LIKE '%--ref%'
+           ORDER BY h.ThuTuHienThi,h.MaHinhAnh LIMIT 1),
+          (SELECT CONCAT('/api/v1/catalog/images/', h.MaHinhAnh, '/content?kind=original')
+           FROM HinhAnhSanPham h WHERE h.MaSanPham=p.MaSanPham
+           ORDER BY h.LaAnhDaiDien DESC,h.ThuTuHienThi,h.MaHinhAnh LIMIT 1)
+        ) AS productImageUrl,
+        t.TrangThaiPhien AS status,
         t.DuongDanAnhNguoiDung AS personAssetId,t.DuongDanAnhKetQuaVTON AS resultAssetId,
         t.ThongBaoLoi AS error,t.ThoiGianKhoiTao AS createdAt,t.DiemTongThe AS score,
-        t.LoiNhanXet AS advice
+        t.LoiNhanXet AS advice,t.DiemTiLeVocDang AS proportionScore,
+        t.DiemHoaHopMauSac AS colorScore,t.DiemCanBangHoaTiet AS patternScore,
+        t.DiemTruPhat AS penaltyScore,t.XepHangThamMy AS tier,t.QuyTacTiLeApDung AS proportionRule
       FROM PhienThuDoAo t JOIN BienTheSanPham b ON b.MaBienThe=t.MaBienThe
         JOIN SanPham p ON p.MaSanPham=b.MaSanPham
       WHERE t.MaNguoiDung=?
       """;
+
+  private static final String LINKED_SESSION_SELECT = """
+      SELECT t.MaPhienThuDo AS sessionId,t.MaBienThe AS variantId,p.MaSanPham AS productId,
+        p.TenSanPham AS productName,p.PhanLoaiVTON AS vtonCategory,
+        b.MaQuanLyHangHoa AS sku,b.KichCo AS size,b.TenMau AS colorName,b.MaMauSac AS colorHex,
+        COALESCE(
+          (SELECT CONCAT('/api/v1/catalog/images/', h.MaHinhAnh, '/content?kind=original')
+           FROM HinhAnhSanPham h WHERE h.MaSanPham=p.MaSanPham AND h.MaMauSac=b.MaMauSac
+             AND h.DuongDanAnhBocNen IS NOT NULL AND h.DuongDanAnhGoc NOT LIKE '%--ref%'
+           ORDER BY h.ThuTuHienThi,h.MaHinhAnh LIMIT 1),
+          (SELECT CONCAT('/api/v1/catalog/images/', h.MaHinhAnh, '/content?kind=original')
+           FROM HinhAnhSanPham h WHERE h.MaSanPham=p.MaSanPham
+             AND h.DuongDanAnhBocNen IS NOT NULL AND h.DuongDanAnhGoc NOT LIKE '%--ref%'
+           ORDER BY h.ThuTuHienThi,h.MaHinhAnh LIMIT 1),
+          (SELECT CONCAT('/api/v1/catalog/images/', h.MaHinhAnh, '/content?kind=original')
+           FROM HinhAnhSanPham h WHERE h.MaSanPham=p.MaSanPham
+           ORDER BY h.LaAnhDaiDien DESC,h.ThuTuHienThi,h.MaHinhAnh LIMIT 1)
+        ) AS productImageUrl
+      FROM PhienThuDoAo t JOIN BienTheSanPham b ON b.MaBienThe=t.MaBienThe
+        JOIN SanPham p ON p.MaSanPham=b.MaSanPham
+      WHERE t.MaNguoiDung=? AND t.MaPhienThuDo=?
+      """;
+
+  private String resolveGender(String categoryId) {
+    String cur = categoryId;
+    var visited = new HashSet<String>();
+    while (cur != null && !cur.isBlank() && visited.add(cur)) {
+      if ("DM000001".equals(cur)) return "NAM";
+      if ("DM000002".equals(cur)) return "NU";
+      var rows = db.rows("SELECT MaDanhMucCha FROM DanhMuc WHERE MaDanhMuc=?", cur);
+      if (rows.isEmpty()) break;
+      cur = Db.text(rows.getFirst(), "MaDanhMucCha");
+    }
+    return null;
+  }
 
   public Map<String, Object> session(String id, String owner) {
     return sessionView(db.one(SESSION_SELECT + " AND t.MaPhienThuDo=?", owner, id), owner, true);
@@ -190,6 +259,8 @@ public class AiService {
   private Map<String, Object> sessionView(Map<String, Object> source, String owner, boolean detail) {
     var row = new LinkedHashMap<>(source);
     String id = Db.text(row, "sessionId");
+    String gender = resolveGender(Db.text(row, "categoryId"));
+    if (gender != null) row.put("productGender", gender);
     String personId = media.readableAsset(Db.text(row, "personAssetId"), owner);
     row.put("personAssetId", personId);
     row.put("resultAssetId", media.readableAsset(Db.text(row, "resultAssetId"), owner));
@@ -200,11 +271,37 @@ public class AiService {
       row.put("resourceId", id);
       row.put("kind", "TRY_ON");
       row.put("status", op.get("StateName"));
+      row.put("progress", op.get("Progress") instanceof Number n ? n.intValue() : ("COMPLETED".equals(op.get("StateName")) ? 100 : 0));
+      if (op.get("Stage") != null) row.put("stage", op.get("Stage"));
+      if (op.get("StageMessage") != null) row.put("stageMessage", op.get("StageMessage"));
       row.put("jobId", op.get("JobId"));
       row.put("retryable", Boolean.TRUE.equals(op.get("Retryable")));
       row.put("simulated", "COMPLETED".equals(op.get("StateName")) && Boolean.TRUE.equals(op.get("Simulated")));
       if (op.get("LastError") != null) row.put("error", op.get("LastError"));
       if (detail) row.put("result", operation(id, owner).get("result"));
+    } else if ("THANH_CONG".equals(row.get("status")) || "COMPLETED".equals(row.get("status"))) {
+      row.put("progress", 100);
+      row.put("stage", "COMPLETED");
+    }
+    String sourceSessionId = op != null ? Db.text(op, "SourceSessionId") : "";
+    if (sourceSessionId.isBlank() && personId != null) {
+      sourceSessionId = media.sourceSessionId(personId);
+    }
+    if (!sourceSessionId.isBlank() && !sourceSessionId.equals(id)) {
+      var linked = db.rows(LINKED_SESSION_SELECT, owner, sourceSessionId);
+      if (!linked.isEmpty()) {
+        row.put("sourceSessionId", sourceSessionId);
+        row.put("pairedItem", linked.getFirst());
+      }
+    }
+    if (detail && scoring != null) {
+      try {
+        if (row.get("score") != null) {
+          row.putAll(scoring.enrichSavedSession(Db.text(row, "tier"), Db.text(row, "proportionRule")));
+        } else if ("THANH_CONG".equals(source.get("status")) || "COMPLETED".equals(row.get("status"))) {
+          row.put("singleItemPreview", scoring.singleItemPreview(Db.text(row, "variantId")));
+        }
+      } catch (Exception ignored) {}
     }
     return row;
   }
@@ -230,7 +327,7 @@ public class AiService {
   }
 
   /** Poll có retry/backoff tối đa; chưa phải scheduler phân tán nhiều Backend replica. */
-  @Scheduled(fixedDelayString = "${app.ai.poll-ms:3000}")
+  @Scheduled(fixedDelayString = "${app.ai.poll-ms:1000}")
   public void tick() {
     if (enabled) processDue();
   }
@@ -267,28 +364,16 @@ public class AiService {
     if (job.isEmpty()) {
       if (kind.equals("TRY_ON")) {
         // Tra session trước mỗi submit để khôi phục response bị mất sau timeout.
+        String aiSessionId = Objects.toString(payload.get("sessionId"), id);
         try {
-          remote = ai.getVton("/internal/v1/try-on/jobs/" + AiClient.id(id));
+          remote = ai.getVton("/internal/v1/try-on/jobs/" + AiClient.id(aiSessionId));
         } catch (Problem e) {
           if (e.status != 404) throw e;
           payload.put("personAssetId", media.remote(payload.get("personAssetId").toString()));
           payload.put("garmentAssetId", remoteGarment(payload.get("garmentAssetId").toString()));
-          Object reference = payload.remove("referenceKey");
-          Object references = payload.remove("referenceKeys");
-          List<?> keys = references instanceof List<?> list ? list
-              : reference instanceof String key ? List.of(key) : List.of();
-          var referenceIds = new ArrayList<String>();
-          for (Object key : keys) {
-            try {
-              referenceIds.add(AiClient.id(Db.text(
-                  ai.upload(media.garmentInput(key.toString()), "reference"), "assetId")));
-            } catch (Problem e2) {
-              org.slf4j.LoggerFactory.getLogger(AiService.class)
-                  .warn("tryon_reference_unavailable sessionId={} code={}", id, e2.code);
-            }
-          }
-          if (referenceIds.size() == 1) payload.put("referenceAssetId", referenceIds.getFirst());
-          else if (!referenceIds.isEmpty()) payload.put("referenceAssetIds", referenceIds);
+          // Cloud VTON (FASHN v1.6) chỉ cần ảnh người + ảnh cutout sản phẩm, không cần upload ảnh --ref.
+          payload.remove("referenceKey");
+          payload.remove("referenceKeys");
           remote = ai.postVton("/internal/v1/try-on/jobs", payload);
         }
       } else {
@@ -352,15 +437,109 @@ public class AiService {
             && ((Number)duration).doubleValue()>=0 && ((Number)duration).doubleValue()<=9999.99,
             502,"AI_RESPONSE_INVALID","Thời gian xử lý không hợp lệ.");
         db.exec("UPDATE PhienThuDoAo SET LoaiKhungAnhNguoi=? WHERE MaPhienThuDo=?", frameCode, id);
-        db.exec(
-            "UPDATE PhienThuDoAo SET"
-                + " TrangThaiPhien=?,DuongDanAnhKetQuaVTON=?,ThongBaoLoi=?,ThoiGianHoanTat=CURRENT_TIMESTAMP,ThoiGianXuLy=?"
-                + " WHERE MaPhienThuDo=?",
-            simulated ? "THAT_BAI" : "THANH_CONG",
-            local,
-            simulated ? "MOCK_RESULT_ONLY" : null,
-            duration,
-            id);
+        if (simulated) {
+          db.exec(
+              "UPDATE PhienThuDoAo SET"
+                  + " TrangThaiPhien='THAT_BAI',DuongDanAnhKetQuaVTON=?,ThongBaoLoi='MOCK_RESULT_ONLY',ThoiGianHoanTat=CURRENT_TIMESTAMP,ThoiGianXuLy=?"
+                  + " WHERE MaPhienThuDo=?",
+              local,
+              duration,
+              id);
+        } else {
+          String personAssetId = Db.text(db.one("SELECT DuongDanAnhNguoiDung FROM PhienThuDoAo WHERE MaPhienThuDo=?", id), "DuongDanAnhNguoiDung");
+          String personKey = "tryon/" + id + "/" + UUID.randomUUID().toString() + "--person.png";
+          String resultKey = "tryon/" + id + "/" + UUID.randomUUID().toString() + "--result.png";
+          try {
+            byte[] personBytes = media.bytes(personAssetId);
+            byte[] resultBytes = media.bytes(local);
+            if (media.isR2Configured()) {
+              media.uploadR2(personKey, personBytes);
+              media.uploadR2(resultKey, resultBytes);
+            }
+            var personMedia = db.runtime().get("media", personAssetId);
+            String personLocal = personMedia != null && !Db.text(personMedia, "LocalFile").isBlank()
+                ? Db.text(personMedia, "LocalFile")
+                : personAssetId + ".png";
+            media.registerR2Asset(owner, personKey, "person", personLocal);
+            media.registerR2Asset(owner, resultKey, "result", local + ".png");
+            db.exec(
+                "UPDATE PhienThuDoAo SET"
+                    + " TrangThaiPhien='THANH_CONG',DuongDanAnhNguoiDung=?,DuongDanAnhKetQuaVTON=?,ThongBaoLoi=NULL,ThoiGianHoanTat=CURRENT_TIMESTAMP,ThoiGianXuLy=?"
+                    + " WHERE MaPhienThuDo=?",
+                personKey,
+                resultKey,
+                duration,
+                id);
+          } catch (Exception e) {
+            db.exec(
+                "UPDATE PhienThuDoAo SET"
+                    + " TrangThaiPhien='THANH_CONG',DuongDanAnhKetQuaVTON=?,ThongBaoLoi=NULL,ThoiGianHoanTat=CURRENT_TIMESTAMP,ThoiGianXuLy=?"
+                    + " WHERE MaPhienThuDo=?",
+                local,
+                duration,
+                id);
+          }
+          try {
+            if (scoring != null) {
+              var sessionRow = db.one("SELECT MaBienThe,DiemTongThe FROM PhienThuDoAo WHERE MaPhienThuDo=?", id);
+              String sku = Db.text(sessionRow, "MaBienThe");
+              String vtonCat = Objects.toString(payload.get("vtonCategory"), "");
+              String sourceSessionId = Db.text(op, "SourceSessionId");
+              if ("dress".equals(vtonCat) && sessionRow.get("DiemTongThe") == null) {
+                var eval = scoring.evaluate(sku, null, false);
+                db.exec(
+                    "UPDATE PhienThuDoAo SET"
+                        + " DiemTongThe=?,DiemTiLeVocDang=?,DiemHoaHopMauSac=?,DiemCanBangHoaTiet=?,DiemTruPhat=?,QuyTacTiLeApDung=?,XepHangThamMy=?,LoiNhanXet=?"
+                        + " WHERE MaPhienThuDo=?",
+                    eval.get("total"),
+                    eval.get("proportion"),
+                    eval.get("color"),
+                    eval.get("pattern"),
+                    eval.get("penalty"),
+                    eval.get("proportionRule"),
+                    eval.get("tier"),
+                    eval.get("stylistComment") != null ? eval.get("stylistComment") : eval.get("advice"),
+                    id);
+              } else if (!"dress".equals(vtonCat)) {
+                if (!sourceSessionId.isBlank() && sessionRow.get("DiemTongThe") == null) {
+                  var prevRows = db.rows(
+                      "SELECT t.MaBienThe,p.PhanLoaiVTON FROM PhienThuDoAo t JOIN BienTheSanPham b ON b.MaBienThe=t.MaBienThe"
+                          + " JOIN SanPham p ON p.MaSanPham=b.MaSanPham WHERE t.MaPhienThuDo=? AND t.MaNguoiDung=?",
+                      sourceSessionId, owner);
+                  if (!prevRows.isEmpty()) {
+                    String prevCat = Db.text(prevRows.getFirst(), "PhanLoaiVTON");
+                    String prevSku = Db.text(prevRows.getFirst(), "MaBienThe");
+                    if (("upper_body".equals(vtonCat) && "lower_body".equals(prevCat))
+                        || ("lower_body".equals(vtonCat) && "upper_body".equals(prevCat))) {
+                      var eval = scoring.evaluate(sku, prevSku, false);
+                      db.exec(
+                          "UPDATE PhienThuDoAo SET"
+                              + " DiemTongThe=?,DiemTiLeVocDang=?,DiemHoaHopMauSac=?,DiemCanBangHoaTiet=?,DiemTruPhat=?,QuyTacTiLeApDung=?,XepHangThamMy=?,LoiNhanXet=?"
+                              + " WHERE MaPhienThuDo=?",
+                          eval.get("total"),
+                          eval.get("proportion"),
+                          eval.get("color"),
+                          eval.get("pattern"),
+                          eval.get("penalty"),
+                          eval.get("proportionRule"),
+                          eval.get("tier"),
+                          eval.get("stylistComment") != null ? eval.get("stylistComment") : eval.get("advice"),
+                          id);
+                    }
+                  }
+                }
+                for (var suggestion : scoring.recommend(sku, false)) {
+                  String recSku = suggestion.get("variantId").toString();
+                  if (db.rows("SELECT MaGoiY FROM GoiYPhoiDo WHERE MaPhienThuDo=? AND MaBienTheGoiY=?", id, recSku).isEmpty()) {
+                    db.exec(
+                        "INSERT INTO GoiYPhoiDo(MaGoiY,MaPhienThuDo,MaBienTheGoiY,DiemSauKhiPhoiKem,LyDoGoiY) VALUES(?,?,?,?,?)",
+                        Db.id("GY"), id, recSku, suggestion.get("projectedScore"), suggestion.get("reason"));
+                  }
+                }
+              }
+            }
+          } catch (Exception ignored) {}
+        }
       } else {
         var analyzed = (List<Map<String,Object>>) converted.get("variants");
         for (var item : analyzed) {
@@ -424,19 +603,33 @@ public class AiService {
     Object errorCode =
         remote.get("error") instanceof Map<?, ?> error ? error.get("errorCode") : null;
     boolean retryable = remote.get("error") instanceof Map<?, ?> e && Boolean.TRUE.equals(e.get("retryable"));
-    db.runtime().patch("operations", id, "StateName", status, "Simulated", simulated, "ResultJson", result == null ? null : json.writeValueAsString(result), "LastError", remote.get("error") == null ? null : Objects.toString(errorCode, "AI_JOB_FAILED"), "Retryable", retryable, "Attempts", 0, "NextAttemptAt", Timestamp.from(Instant.now().plusSeconds(3)).getTime());
+    int progress = remote.get("progress") instanceof Number n ? n.intValue() : ("COMPLETED".equals(status) ? 100 : 0);
+    Object stage = remote.get("stage");
+    Object stageMessage = remote.get("stageMessage");
+    long nextPoll = Instant.now().plusSeconds(status.equals("PROCESSING") ? 1 : 3).toEpochMilli();
+    db.runtime().patch("operations", id, "StateName", status, "Progress", progress, "Stage", stage, "StageMessage", stageMessage, "Simulated", simulated, "ResultJson", result == null ? null : json.writeValueAsString(result), "LastError", remote.get("error") == null ? null : Objects.toString(errorCode, "AI_JOB_FAILED"), "Retryable", retryable, "Attempts", 0, "NextAttemptAt", nextPoll);
   }
 
-  /** Ảnh cutout cũng có thể dùng làm input garment nhưng role gửi AI luôn đúng. */
+  /** Ảnh cutout cũng có thể dùng làm input garment nhưng role gửi AI luôn đúng; tự upload lại nếu cache 404. */
   private String remoteGarment(String asset) {
     var rows = db.runtime().find("media", r -> asset.equals(r.get("AssetId")));
     if (!rows.isEmpty()) {
       var row = rows.getFirst();
-      if (!Db.text(row, "AiAssetId").isEmpty() && "garment".equals(row.get("RoleName")))
-        return Db.text(row, "AiAssetId");
+      String cached = Db.text(row, "AiAssetId");
+      if (!cached.isEmpty() && "garment".equals(row.get("RoleName"))) {
+        try {
+          ai.getVton("/internal/v1/assets/" + AiClient.id(cached));
+          return cached;
+        } catch (Problem e) {
+          if (e.status != 404) throw e;
+        }
+      }
     }
     String remote =
         AiClient.id(ai.upload(media.garmentInput(asset), "garment").get("assetId").toString());
+    if (!rows.isEmpty() && "garment".equals(rows.getFirst().get("RoleName"))) {
+      db.runtime().patch("media", asset, "AiAssetId", remote);
+    }
     return remote;
   }
 
@@ -481,6 +674,94 @@ public class AiService {
     if ("PRODUCT_ANALYSIS".equals(op.get("KindName")) && "CANCELLED".equals(result.get("status")))
       finishProductAnalysis(op);
     return operation(id, owner);
+  }
+
+  /** Đổi ảnh người ngay trên phiên thử đồ đã thất bại mà không tạo phiên PhienThuDoAo mới. */
+  @Transactional
+  @SuppressWarnings("unchecked")
+  public synchronized Map<String, Object> replacePerson(
+      String sessionId, String owner, AiController.ReplacePerson b) {
+    Problem.require(b.consent(), 422, "CONSENT_REQUIRED", "Cần đồng ý xử lý ảnh.");
+    Problem.require((b.personAssetId() == null) != (b.shopModelId() == null),
+        422, "PERSON_SOURCE_REQUIRED", "Chọn đúng một ảnh cá nhân hoặc mẫu shop.");
+    var op = ownedOperation(sessionId, owner);
+    Problem.require("TRY_ON".equals(op.get("KindName")), 404, "NOT_FOUND", "Không tìm thấy phiên thử đồ.");
+    String curState = Db.text(op, "StateName");
+    Problem.require(
+        Set.of("FAILED", "SYNC_FAILED", "CANCELLED").contains(curState)
+            || ("COMPLETED".equals(curState) && Boolean.TRUE.equals(op.get("Simulated"))),
+        409,
+        "SESSION_NOT_REPLACEABLE",
+        "Chỉ có thể đổi ảnh khi phiên thử đồ đã thất bại hoặc bị hủy.");
+    String nextSourceSessionId = "";
+    if (b.personAssetId() != null) {
+      var ownedPerson = media.owned(b.personAssetId(), owner);
+      Problem.require("person".equals(ownedPerson.get("RoleName")),
+          422, "ASSET_ROLE_INVALID", "Cần ảnh tải lên với role person.");
+      nextSourceSessionId = Db.text(ownedPerson, "SourceSessionId");
+    }
+    String personId = b.shopModelId() == null ? b.personAssetId() : media.shopPerson(owner, b.shopModelId());
+    var payload = new LinkedHashMap<String, Object>(json.readValue(Db.text(op, "Payload"), Map.class));
+    int rev = (op.get("Revision") instanceof Number n ? n.intValue() : 1) + 1;
+    payload.put("personAssetId", personId);
+    payload.put("sessionId", sessionId + "-r" + rev);
+    db.exec(
+        "UPDATE PhienThuDoAo SET DuongDanAnhNguoiDung=?,LoaiKhungAnhNguoi='KHONG_HOP_LE',"
+            + "TrangThaiPhien='CHO_XU_LY',ThongBaoLoi=NULL,ThoiGianHoanTat=NULL,ThoiGianXuLy=NULL"
+            + " WHERE MaPhienThuDo=? AND MaNguoiDung=?",
+        personId,
+        sessionId,
+        owner);
+    db.runtime().patch(
+        "operations",
+        sessionId,
+        "Payload", json.writeValueAsString(payload),
+        "SourceSessionId", nextSourceSessionId.isBlank() ? null : nextSourceSessionId,
+        "Revision", rev,
+        "JobId", null,
+        "StateName", "PENDING_SUBMIT",
+        "Progress", 0,
+        "Stage", "QUEUED",
+        "StageMessage", "Đang xếp hàng chờ xử lý...",
+        "LastError", null,
+        "Retryable", false,
+        "ResultJson", null,
+        "Attempts", 0,
+        "NextAttemptAt", 0L);
+    return session(sessionId, owner);
+  }
+
+  /** Sao chép ảnh kết quả VTON thành asset role=person để thử tiếp món đối ứng (không vượt quota). */
+  @Transactional
+  public Map<String, Object> promoteResultToPerson(String sessionId, String owner) {
+    var s = db.one(
+        "SELECT t.MaPhienThuDo AS sessionId,t.TrangThaiPhien AS status,"
+            + "t.DuongDanAnhKetQuaVTON AS resultAssetId,t.LoaiKhungAnhNguoi AS personFrame,"
+            + "p.PhanLoaiVTON AS vtonCategory,p.MaDanhMuc AS categoryId "
+            + "FROM PhienThuDoAo t JOIN BienTheSanPham b ON b.MaBienThe=t.MaBienThe "
+            + "JOIN SanPham p ON p.MaSanPham=b.MaSanPham "
+            + "WHERE t.MaPhienThuDo=? AND t.MaNguoiDung=?",
+        sessionId,
+        owner);
+    Problem.require("THANH_CONG".equals(s.get("status")), 409, "SESSION_NOT_COMPLETED",
+        "Chỉ có thể lấy ảnh kết quả từ phiên thử đồ đã hoàn tất.");
+    String resultAsset = Db.text(s, "resultAssetId");
+    Problem.require(!resultAsset.isBlank(), 404, "RESULT_NOT_FOUND", "Phiên chưa có ảnh kết quả VTON.");
+    String vtonCat = Db.text(s, "vtonCategory");
+    Problem.require(!"dress".equals(vtonCat), 422, "CHAIN_DRESS_FORBIDDEN",
+        "Không được dùng ảnh kết quả Đầm liền để thử chồng thêm Áo hoặc Quần/Chân váy.");
+    byte[] bytes = media.bytes(resultAsset);
+    var saved = media.save(owner, "person", bytes, false, false);
+    String promotedId = saved.get("assetId").toString();
+    db.runtime().patch("media", promotedId, "SourceSessionId", sessionId);
+    var out = new LinkedHashMap<String, Object>();
+    out.put("personAssetId", promotedId);
+    out.put("sourceSessionId", sessionId);
+    out.put("sourceCategory", vtonCat);
+    out.put("personFrame", Db.text(s, "personFrame"));
+    String gender = resolveGender(Db.text(s, "categoryId"));
+    if (gender != null) out.put("productGender", gender);
+    return out;
   }
 
   /** Map độ dài catalog sang enum AI, không hardcode mọi sản phẩm là áo. */

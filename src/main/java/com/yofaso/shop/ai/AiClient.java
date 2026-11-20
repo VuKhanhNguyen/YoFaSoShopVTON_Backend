@@ -233,13 +233,19 @@ public class AiClient {
   private Problem error(RestClientException e) {
     if (e instanceof RestClientResponseException r) {
       int status = r.getStatusCode().value();
+      if (status != 404) {
+        log.warn("AI upstream error: HTTP {}", status);
+      }
       return new Problem(
           status == 404 ? 404 : status == 401 ? 503 : status >= 500 ? 503 : status,
           "AI_HTTP_" + status,
           status == 404
               ? "Chưa tìm thấy tài nguyên AI."
-              : "AI từ chối hoặc chưa xử lý được request; kiểm tra ảnh, trạng thái và cấu hình.");
+              : status == 401
+                  ? "Khóa kết nối nội bộ AI không hợp lệ; kiểm tra AI_INTERNAL_API_KEY giữa Backend và AI Service."
+                  : "AI từ chối hoặc chưa xử lý được request; kiểm tra ảnh, trạng thái và cấu hình.");
     }
+    log.warn("AI upstream unavailable: {}", e.getMessage());
     return new Problem(503, "AI_UNAVAILABLE", "Không kết nối được AI; kiểm tra dịch vụ/tunnel.");
   }
 }

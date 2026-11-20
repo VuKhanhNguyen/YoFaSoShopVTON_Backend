@@ -65,7 +65,7 @@ app:
     connect-timeout-seconds: ${AI_CONNECT_TIMEOUT_SECONDS:15}
     read-timeout-seconds: ${AI_SUBMIT_TIMEOUT_SECONDS:180}
     vton-http-timeout-seconds: ${AI_VTON_HTTP_TIMEOUT_SECONDS:15}
-    poll-ms: ${AI_POLL_INTERVAL_MS:3000}
+    poll-ms: ${AI_POLL_INTERVAL_MS:1000}
     enabled: ${AI_POLL_ENABLED:true}
   bootstrap:
     username: ${BOOTSTRAP_ADMIN_USERNAME:}

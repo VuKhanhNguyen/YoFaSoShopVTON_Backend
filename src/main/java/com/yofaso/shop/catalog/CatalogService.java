@@ -155,8 +155,14 @@ public class CatalogService {
       ));
     }
 
+    Map<String, String> catParents = new HashMap<>();
+    for (var row : db.rows("SELECT MaDanhMuc AS id, MaDanhMucCha AS parentId FROM DanhMuc")) {
+      catParents.put(Db.text(row, "id"), Db.text(row, "parentId"));
+    }
+
     for (var item : items) {
       String id = item.get("productId").toString();
+      item.put("gender", resolveGender(Db.text(item, "categoryId"), catParents));
       BigDecimal minP = minPrices.get(id) != null ? new BigDecimal(minPrices.get(id).toString()) : null;
       BigDecimal origP = origPrices.get(id) != null ? new BigDecimal(origPrices.get(id).toString()) : null;
       item.put("minPrice", minP);
@@ -182,6 +188,17 @@ public class CatalogService {
     }
   }
 
+  private String resolveGender(String categoryId, Map<String, String> parents) {
+    String cur = categoryId;
+    var visited = new HashSet<String>();
+    while (cur != null && !cur.isBlank() && visited.add(cur)) {
+      if ("DM000001".equals(cur)) return "NAM";
+      if ("DM000002".equals(cur)) return "NU";
+      cur = parents.getOrDefault(cur, "");
+    }
+    return null;
+  }
+
   /** Chi tiết công khai hoặc quản trị; tuyệt đối không lộ bản nháp qua public. */
   public Map<String, Object> detail(String id, boolean admin) {
     var p =
@@ -190,6 +207,11 @@ public class CatalogService {
                 + " WHERE MaSanPham=?"
                 + (admin ? "" : " AND TrangThaiSanPham='DANG_KINH_DOANH'"),
             id);
+    Map<String, String> catParents = new HashMap<>();
+    for (var row : db.rows("SELECT MaDanhMuc AS id, MaDanhMucCha AS parentId FROM DanhMuc")) {
+      catParents.put(Db.text(row, "id"), Db.text(row, "parentId"));
+    }
+    p.put("gender", resolveGender(Db.text(p, "categoryId"), catParents));
     var variants = db.rows(VARIANT + " WHERE MaSanPham=?" + (admin ? "" : " AND TrangThai<>'NGUNG_BAN'"), id);
     p.put("variants", variants);
     var imgs = images(id);

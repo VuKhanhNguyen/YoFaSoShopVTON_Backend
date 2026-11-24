@@ -20,7 +20,7 @@ public class Db {
 
   public record PrefixMeta(String table, String column, int digits) {}
 
-  /** Cấu hình tiền tố và độ dài số tự tăng cho toàn bộ 17 bảng có khóa chính đơn theo ERD và dữ liệu mẫu. */
+  /** Cấu hình tiền tố và độ dài số tự tăng cho toàn bộ 18 bảng có khóa chính đơn theo ERD và dữ liệu mẫu. */
   public static final Map<String, PrefixMeta> PREFIX_MAP = Map.ofEntries(
       Map.entry("ND", new PrefixMeta("NguoiDung", "MaNguoiDung", 8)),
       Map.entry("DC", new PrefixMeta("SoDiaChi", "MaDiaChi", 8)),
@@ -38,7 +38,8 @@ public class Db {
       Map.entry("BDK", new PrefixMeta("BienDongKho", "MaBienDong", 8)),
       Map.entry("CA", new PrefixMeta("CaLamViecThuNgan", "MaCaLamViec", 6)),
       Map.entry("DG", new PrefixMeta("DanhGiaSanPham", "MaDanhGia", 8)),
-      Map.entry("TB", new PrefixMeta("ThongBao", "MaThongBao", 8))
+      Map.entry("TB", new PrefixMeta("ThongBao", "MaThongBao", 8)),
+      Map.entry("TN", new PrefixMeta("TinNhanTrucTuyen", "MaTinNhan", 8))
   );
 
   private final ConcurrentHashMap<String, AtomicLong> counters = new ConcurrentHashMap<>();

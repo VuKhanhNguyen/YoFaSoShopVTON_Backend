@@ -53,7 +53,10 @@ public class ContractController {
                                   "/api/v1/auth/login",
                                   "/api/v1/auth/refresh",
                                   "/api/v1/auth/forgot-password",
-                                  "/api/v1/auth/reset-password")
+                                  "/api/v1/auth/reset-password",
+                                  "/api/v1/chat/config",
+                                  "/api/v1/chat/messages",
+                                  "/api/v1/chat/images")
                               .contains(path);
                   operation.put(
                       "security", open ? List.of() : List.of(Map.of("bearerAuth", List.of())));

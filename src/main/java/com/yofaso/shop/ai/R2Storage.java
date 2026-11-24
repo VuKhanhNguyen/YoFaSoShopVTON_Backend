@@ -48,7 +48,8 @@ public class R2Storage implements AutoCloseable {
   }
 
   private String bucketFor(String key) {
-    return (key.startsWith("catalog-processing/") || key.startsWith("tryon/")) ? privateBucket : bucket;
+    return (key.startsWith("catalog-processing/") || key.startsWith("tryon/") || key.startsWith("chat/"))
+        ? privateBucket : bucket;
   }
 
   public byte[] get(String key) {
@@ -92,7 +93,8 @@ public class R2Storage implements AutoCloseable {
     Problem.require(client!=null,503,"R2_NOT_CONFIGURED","Cấu hình R2 trước khi đồng bộ kết quả catalog thật.");
     Problem.require((key.matches("(catalog|catalog-processing)/products/[A-Za-z0-9_/\\-]+[.]png")
         || key.matches("avatars/[A-Za-z0-9_/\\-]+[.]png")
-        || key.matches("tryon/[A-Za-z0-9_\\-]+/[A-Za-z0-9_\\-]+[.]png")) && !key.contains(".."),500,"R2_KEY_INVALID","Key R2 không hợp lệ.");
+        || key.matches("tryon/[A-Za-z0-9_\\-]+/[A-Za-z0-9_\\-]+[.]png")
+        || key.matches("chat/[A-Za-z0-9_\\-]+/[A-Za-z0-9_\\-]+[.]png")) && !key.contains(".."),500,"R2_KEY_INVALID","Key R2 không hợp lệ.");
     try {
       var request = PutObjectRequest.builder().bucket(bucketFor(key)).key(key).contentType("image/png");
       if (createOnly) request.ifNoneMatch("*");

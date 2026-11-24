@@ -383,6 +383,35 @@ CREATE TABLE NguoiDung_KhuyenMai (
     CONSTRAINT FK_NDKM_DonHang FOREIGN KEY (MaDonHangDaDung) REFERENCES DonHang(MaDonHang) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Bảng ví voucher cá nhân của người dùng (My Voucher Wallet)';
 
+-- Bảng 21: TinNhanTrucTuyen (Tin nhắn trực tuyến hợp nhất: Trợ lý AI Thời trang & Live Chat CSKH Chủ shop)
+CREATE TABLE IF NOT EXISTS TinNhanTrucTuyen (
+    MaTinNhan VARCHAR(30) NOT NULL COMMENT 'Mã định danh tin nhắn (VD: TN00000001)',
+    MaNguoiDung VARCHAR(20) NULL COMMENT 'Khóa ngoại tham chiếu NguoiDung khách hàng (NULL nếu khách vãng lai hỏi Trợ lý AI)',
+    MaPhienChat VARCHAR(36) NOT NULL COMMENT 'Mã gom nhóm phiên hội thoại logic (VD: ai-ND00000005 hoặc shop-ND00000005)',
+    KenhTroChuyen ENUM('TRO_LY_AI', 'CHU_SHOP') NOT NULL DEFAULT 'TRO_LY_AI' COMMENT 'Kênh hội thoại: Trợ lý AI thời trang hoặc Live Chat trực tiếp với Chủ shop',
+    VaiTroNguoiGui ENUM('KHACH_HANG', 'TRO_LY_AI', 'CHU_SHOP') NOT NULL COMMENT 'Vai trò người gửi tin nhắn',
+    MaNhanVienGui VARCHAR(20) NULL COMMENT 'Khóa ngoại tham chiếu NguoiDung (Admin Chủ shop) khi VaiTroNguoiGui = CHU_SHOP',
+    NoiDung TEXT NOT NULL COMMENT 'Nội dung văn bản tin nhắn (hỗ trợ đầy đủ tiếng Việt & emoji)',
+    DuongDanAnh VARCHAR(255) NULL COMMENT 'Object key ảnh đính kèm trên R2 private (VD: chat/ND00000005/uuid.png)',
+    PhanLoaiYDo ENUM(
+        'TIM_SAN_PHAM',
+        'TU_VAN_SIZE_MAU',
+        'PHOI_DO_VTON',
+        'TRA_CUU_DON_HANG',
+        'KHUYEN_MAI_HOI_VIEN',
+        'CHINH_SACH_LIEN_HE',
+        'NGOAI_PHAM_VI'
+    ) NULL COMMENT 'Nhãn phân loại ý định Guardrail cho Trợ lý AI (lọc NGOAI_PHAM_VI khỏi ngữ cảnh LLM)',
+    DuLieuDinhKem JSON NULL COMMENT 'Payload cấu trúc render card trên App (sản phẩm, biến thể, đơn hàng, voucher, liên hệ Admin, gợi ý nhanh)',
+    MaPhienThuDo VARCHAR(30) NULL COMMENT 'Khóa ngoại tham chiếu PhienThuDoAo khi khách hỏi tư vấn trực tiếp từ kết quả VTON',
+    DaDoc TINYINT(1) NOT NULL DEFAULT 0 COMMENT '0: Chưa đọc, 1: Đã đọc (dùng cho badge thông báo Live Chat CSKH)',
+    ThoiGianGui DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Thời điểm gửi tin nhắn',
+    CONSTRAINT PK_TinNhanTrucTuyen PRIMARY KEY (MaTinNhan),
+    CONSTRAINT FK_TinNhanTrucTuyen_NguoiDung FOREIGN KEY (MaNguoiDung) REFERENCES NguoiDung(MaNguoiDung) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT FK_TinNhanTrucTuyen_NhanVienGui FOREIGN KEY (MaNhanVienGui) REFERENCES NguoiDung(MaNguoiDung) ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT FK_TinNhanTrucTuyen_PhienThuDo FOREIGN KEY (MaPhienThuDo) REFERENCES PhienThuDoAo(MaPhienThuDo) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Bảng tin nhắn trực tuyến hợp nhất: Trợ lý AI Thời trang (Guardrails) & Live Chat CSKH với Chủ shop';
+
 -- -------------------------------------------------------------------------------------
 -- TỐI ƯU HÓA CHỈ MỤC TÌM KIẾM (INDEX CHO HIỆU NĂNG TRUY VẤN CAO)
 -- -------------------------------------------------------------------------------------
@@ -405,6 +434,10 @@ CREATE INDEX IDX_BienDongKho_NgayThucHien ON BienDongKho(NgayThucHien);
 CREATE INDEX IDX_CaLamViec_ThuNgan ON CaLamViecThuNgan(MaThuNgan);
 CREATE INDEX IDX_ThongBao_NguoiDung_DaDoc ON ThongBao(MaNguoiDung, DaDoc, NgayTao DESC);
 CREATE INDEX IDX_NguoiDung_KhuyenMai_TrangThai ON NguoiDung_KhuyenMai(MaNguoiDung, TrangThai);
+CREATE INDEX IDX_TinNhanTrucTuyen_Phien_ThoiGian ON TinNhanTrucTuyen(MaPhienChat, ThoiGianGui DESC);
+CREATE INDEX IDX_TinNhanTrucTuyen_NguoiDung_Kenh_ThoiGian ON TinNhanTrucTuyen(MaNguoiDung, KenhTroChuyen, ThoiGianGui DESC);
+CREATE INDEX IDX_TinNhanTrucTuyen_Kenh_DaDoc ON TinNhanTrucTuyen(KenhTroChuyen, DaDoc, ThoiGianGui DESC);
+CREATE INDEX IDX_TinNhanTrucTuyen_PhienThuDo ON TinNhanTrucTuyen(MaPhienThuDo);
 
 -- =====================================================================================
 

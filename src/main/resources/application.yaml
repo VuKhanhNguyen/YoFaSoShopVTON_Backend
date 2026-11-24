@@ -71,3 +71,33 @@ app:
     username: ${BOOTSTRAP_ADMIN_USERNAME:}
     password: ${BOOTSTRAP_ADMIN_PASSWORD:}
     phone: ${BOOTSTRAP_ADMIN_PHONE:}
+  llm:
+    # Doi thu tu uu tien linh hoat trong .env (VD: groq,gemini,openrouter hoac gemini,groq,openrouter)
+    provider-order: ${LLM_PROVIDER_ORDER:groq,gemini,openrouter}
+  groq:
+    api-key: ${GROQ_API_KEY:}
+    base-url: ${GROQ_BASE_URL:https://api.groq.com/openai/v1/chat/completions}
+    models: ${GROQ_MODELS:openai/gpt-oss-120b,qwen/qwen3.8-27b,openai/gpt-oss-20b,allam-2-7b}
+    min-remaining-rpd: ${GROQ_MIN_REMAINING_RPD:5}
+  gemini:
+    api-key: ${GEMINI_API_KEY:}
+    base-url: ${GEMINI_BASE_URL:https://generativelanguage.googleapis.com/v1beta/models}
+    models: ${GEMINI_MODELS:gemini-3.5-flash-lite,gemini-3.1-flash-lite-preview,gemini-3.8-flash,gemini-3.6-flash,gemini-3-flash-preview,gemini-2.5-flash,gemini-2.5-flash-lite,gemini-4-hydrogen,gemma-4-31b-it,gemma-4-26b-a4b-it}
+    min-remaining-rpd: ${GEMINI_MIN_REMAINING_RPD:2}
+  openrouter:
+    api-key: ${OPENROUTER_API_KEY:}
+    base-url: ${OPENROUTER_BASE_URL:https://openrouter.ai/api/v1/chat/completions}
+    models: ${OPENROUTER_MODELS:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free,nvidia/nemotron-3.5-super-vl:free,nvidia/nemotron-3.5-lightning:free,nvidia/nemotron-3-ultra-550b-a55b:free,google/gemma-4-31b-it:free,google/gemma-4-26b-a4b-it:free}
+    min-remaining-rpd: ${OPENROUTER_MIN_REMAINING_RPD:2}
+    temperature: ${OPENROUTER_TEMPERATURE:0.2}
+    max-tokens: ${OPENROUTER_MAX_TOKENS:1500}
+    timeout-seconds: ${OPENROUTER_TIMEOUT_SECONDS:25}
+    site-url: ${WEB_APP_URL:http://localhost:3000}
+    site-name: "YoFaSo Shop"
+  support:
+    hotline: ${SHOP_SUPPORT_HOTLINE:0795605214}
+    zalo: ${SHOP_SUPPORT_ZALO:0795605214}
+    email: ${SHOP_SUPPORT_EMAIL:nguyenvukhanh392@gmail.com}
+    hours: ${SHOP_SUPPORT_HOURS:08:00 - 22:00 (Thứ 2 - Chủ nhật)}
+    showroom-name: ${SHOP_SHOWROOM_NAME:YoFaSo Atelier Đà Nẵng}
+    showroom-address: ${SHOP_SHOWROOM_ADDRESS:48 Cao Thắng, Hải Châu, Đà Nẵng}

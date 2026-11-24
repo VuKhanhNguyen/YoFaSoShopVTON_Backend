@@ -11,6 +11,7 @@ class R2StorageKeyRegexTest {
       Pattern.compile("(catalog|catalog-processing)/products/[A-Za-z0-9_/\\-]+[.]png");
   private final Pattern avatarPattern = Pattern.compile("avatars/[A-Za-z0-9_/\\-]+[.]png");
   private final Pattern tryonPattern = Pattern.compile("tryon/[A-Za-z0-9_\\-]+/[A-Za-z0-9_\\-]+[.]png");
+  private final Pattern chatPattern = Pattern.compile("chat/[A-Za-z0-9_\\-]+/[A-Za-z0-9_\\-]+[.]png");
 
   @Test
   void testTryOnKeyValid() {
@@ -19,6 +20,8 @@ class R2StorageKeyRegexTest {
 
     assertTrue(tryonPattern.matcher(key1).matches());
     assertTrue(tryonPattern.matcher(key2).matches());
+    assertTrue(chatPattern.matcher("chat/ND00000005/msg-12345678abcd.png").matches());
+    assertFalse(chatPattern.matcher("chat/../escape.png").matches());
   }
 
   @Test

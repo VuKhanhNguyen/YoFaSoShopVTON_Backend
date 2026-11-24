@@ -30,6 +30,7 @@ public class MediaService {
   private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(MediaService.class);
   private final Path root;
   private final Path cacheDir;
+  private final Path chatDir;
   private final Db db;
   private final AiClient ai;
   private final R2Storage r2;
@@ -44,6 +45,8 @@ public class MediaService {
     Files.createDirectories(this.root);
     this.cacheDir = this.root.resolve("catalog-cache");
     Files.createDirectories(this.cacheDir);
+    this.chatDir = this.root.resolve("chat-cache");
+    Files.createDirectories(this.chatDir);
     this.db = db;
     this.ai = ai;
     this.r2 = r2;
@@ -627,5 +630,97 @@ public class MediaService {
     try {
       Files.deleteIfExists(cacheDir.resolve(Idempotency.hash(key) + ".png"));
     } catch (IOException ignored) {}
+  }
+
+  /** Chuẩn hóa ảnh chat sang PNG sạch EXIF, lưu R2 private prefix chat/{owner}/ và cache local. */
+  public String saveChatImage(String ownerFolder, byte[] rawBytes) {
+    Problem.require(rawBytes != null && rawBytes.length > 0 && rawBytes.length <= 10 * 1024 * 1024,
+        413, "FILE_TOO_LARGE", "Ảnh chat không được rỗng và tối đa 10 MB.");
+    String safeOwner = (ownerFolder == null ? "guest" : ownerFolder.replaceAll("[^A-Za-z0-9_-]", ""));
+    if (safeOwner.isBlank()) safeOwner = "guest";
+    if (safeOwner.length() > 40) safeOwner = safeOwner.substring(0, 40);
+
+    byte[] pngBytes;
+    try (var stream = ImageIO.createImageInputStream(new ByteArrayInputStream(rawBytes))) {
+      var readers = ImageIO.getImageReaders(stream);
+      Problem.require(readers.hasNext(), 415, "IMAGE_INVALID", "Chỉ nhận ảnh PNG hoặc JPEG thực.");
+      var reader = readers.next();
+      try {
+        String format = reader.getFormatName();
+        Problem.require(format.equalsIgnoreCase("png") || format.equalsIgnoreCase("jpeg"),
+            415, "IMAGE_INVALID", "Chỉ hỗ trợ ảnh PNG hoặc JPEG.");
+        reader.setInput(stream, true, true);
+        int w = reader.getWidth(0), h = reader.getHeight(0);
+        Problem.require(w >= 32 && h >= 32 && (long) w * h <= 25000000,
+            422, "IMAGE_DIMENSIONS_INVALID", "Cạnh ảnh tối thiểu 32px, tối đa 25 triệu pixel.");
+        var image = ImageOrientation.apply(reader.read(0), ImageOrientation.read(rawBytes));
+        int maxDim = 1600;
+        if (image.getWidth() > maxDim || image.getHeight() > maxDim) {
+          int tw = image.getWidth(), th = image.getHeight();
+          if (tw > th) {
+            th = (int) Math.round((double) th * maxDim / tw);
+            tw = maxDim;
+          } else {
+            tw = (int) Math.round((double) tw * maxDim / th);
+            th = maxDim;
+          }
+          var scaled = new java.awt.image.BufferedImage(tw, th,
+              image.getColorModel().hasAlpha()
+                  ? java.awt.image.BufferedImage.TYPE_INT_ARGB
+                  : java.awt.image.BufferedImage.TYPE_INT_RGB);
+          var g = scaled.createGraphics();
+          try {
+            g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            g.drawImage(image, 0, 0, tw, th, null);
+          } finally {
+            g.dispose();
+          }
+          image = scaled;
+        }
+        var out = new ByteArrayOutputStream();
+        ImageIO.write(image, "png", out);
+        pngBytes = out.toByteArray();
+      } finally {
+        reader.dispose();
+      }
+    } catch (IOException e) {
+      throw new Problem(415, "IMAGE_INVALID", "Không đọc được file ảnh tải lên.");
+    }
+
+    String uuid = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+    String key = "chat/" + safeOwner + "/msg-" + uuid + ".png";
+    try {
+      Files.write(chatDir.resolve(Idempotency.hash(key) + ".png"), pngBytes);
+    } catch (IOException e) {
+      throw new Problem(503, "STORAGE_UNAVAILABLE", "Chưa lưu được bản sao ảnh chat trên đĩa.");
+    }
+    if (r2 != null && r2.isConfigured()) {
+      try {
+        r2.upload(key, pngBytes);
+      } catch (Exception e) {
+        log.warn("Không upload được ảnh chat {} lên R2 (giữ bản local): {}", key, e.getMessage());
+      }
+    }
+    return key;
+  }
+
+  /** Đọc ảnh chat từ local cache trước, fallback tải từ R2 private bucket. */
+  public byte[] readChatImage(String key) {
+    Problem.require(key != null && key.matches("chat/[A-Za-z0-9_\\-]+/[A-Za-z0-9_\\-]+[.]png") && !key.contains(".."),
+        422, "CHAT_IMAGE_KEY_INVALID", "Đường dẫn ảnh chat không hợp lệ.");
+    Path cached = chatDir.resolve(Idempotency.hash(key) + ".png");
+    if (Files.isRegularFile(cached)) {
+      try {
+        return Files.readAllBytes(cached);
+      } catch (IOException ignored) {}
+    }
+    if (r2 != null && r2.isConfigured()) {
+      byte[] bytes = r2.get(key);
+      try {
+        Files.write(cached, bytes);
+      } catch (IOException ignored) {}
+      return bytes;
+    }
+    throw new Problem(404, "NOT_FOUND", "Không tìm thấy ảnh chat.");
   }
 }

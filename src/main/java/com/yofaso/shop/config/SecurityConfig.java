@@ -108,7 +108,11 @@ public class SecurityConfig {
                         "/actuator/health",
                         "/api/v1/contract",
                         "/api/v1/convert/address",
-                        "/api/v1/convert/batch")
+                        "/api/v1/convert/batch",
+                        "/api/v1/chat/config",
+                        "/api/v1/chat/messages",
+                        "/api/v1/chat/images",
+                        "/api/v1/chat/images/**")
                     .permitAll()
                     .requestMatchers(
                         org.springframework.http.HttpMethod.GET,

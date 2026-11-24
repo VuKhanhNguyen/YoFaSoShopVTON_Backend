@@ -227,5 +227,20 @@
     "TrangThai",
     "NgaySuDung",
     "MaDonHangDaDung"
+  ],
+  "TinNhanTrucTuyen": [
+    "MaTinNhan",
+    "MaNguoiDung",
+    "MaPhienChat",
+    "KenhTroChuyen",
+    "VaiTroNguoiGui",
+    "MaNhanVienGui",
+    "NoiDung",
+    "DuongDanAnh",
+    "PhanLoaiYDo",
+    "DuLieuDinhKem",
+    "MaPhienThuDo",
+    "DaDoc",
+    "ThoiGianGui"
   ]
 }

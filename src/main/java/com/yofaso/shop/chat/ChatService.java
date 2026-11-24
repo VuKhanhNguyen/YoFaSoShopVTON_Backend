@@ -18,7 +18,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Nghiệp vụ hợp nhất cho bảng TinNhanTrucTuyen:
- * 1) Trợ lý AI Thời trang (Guardrails 4 lớp + RAG live từ 20 bảng + OpenRouter multi-model fallback).
+ * 1) Trợ lý AI Thời trang (Guardrails 4 lớp + RAG live từ 22 bảng + OpenRouter multi-model fallback).
  * 2) Live Chat CSKH trực tiếp giữa Khách hàng (ROLE_CUSTOMER) và Admin Chủ shop (ROLE_SHOP_ADMIN).
  */
 @Service
@@ -116,6 +116,7 @@ public class ChatService {
     config.put("showroomAddress", showroomAddress);
     config.put("aiConfigured", openRouter.isConfigured());
     config.put("aiProviders", openRouter.configuredProviders());
+    config.put("aiVisionProviders", openRouter.configuredVisionProviders());
     config.put("aiModelCount", openRouter.configuredModels().size());
     return config;
   }
@@ -212,6 +213,11 @@ public class ChatService {
           401, "LOGIN_REQUIRED", "Vui lòng đăng nhập để nhắn tin trực tiếp với Chủ shop.");
       String validVton = validateVtonOwnership(userId, vtonSessionId);
       String shopSession = shopSessionId(userId);
+      // Mark prior shop messages as read when the customer replies on the live shop channel
+      db.exec(
+          "UPDATE TinNhanTrucTuyen SET DaDoc = 1 "
+              + "WHERE MaNguoiDung = ? AND KenhTroChuyen = 'CHU_SHOP' AND VaiTroNguoiGui = 'CHU_SHOP' AND DaDoc = 0",
+          userId);
       String msgId = Db.id("TN");
       db.exec(
           "INSERT INTO TinNhanTrucTuyen("

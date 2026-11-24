@@ -297,7 +297,14 @@ public class AiService {
     if (detail && scoring != null) {
       try {
         if (row.get("score") != null) {
-          row.putAll(scoring.enrichSavedSession(Db.text(row, "tier"), Db.text(row, "proportionRule")));
+          String pairedVariantId = row.get("pairedItem") instanceof Map<?, ?> pm
+              ? Objects.toString(pm.get("variantId"), null)
+              : null;
+          row.putAll(scoring.enrichSavedSession(
+              Db.text(row, "tier"),
+              Db.text(row, "proportionRule"),
+              Db.text(row, "variantId"),
+              pairedVariantId));
         } else if ("THANH_CONG".equals(source.get("status")) || "COMPLETED".equals(row.get("status"))) {
           row.put("singleItemPreview", scoring.singleItemPreview(Db.text(row, "variantId")));
         }
@@ -449,9 +456,10 @@ public class AiService {
           String personAssetId = Db.text(db.one("SELECT DuongDanAnhNguoiDung FROM PhienThuDoAo WHERE MaPhienThuDo=?", id), "DuongDanAnhNguoiDung");
           String personKey = "tryon/" + id + "/" + UUID.randomUUID().toString() + "--person.png";
           String resultKey = "tryon/" + id + "/" + UUID.randomUUID().toString() + "--result.png";
+          byte[] resultBytes = null;
           try {
             byte[] personBytes = media.bytes(personAssetId);
-            byte[] resultBytes = media.bytes(local);
+            resultBytes = media.bytes(local);
             if (media.isR2Configured()) {
               media.uploadR2(personKey, personBytes);
               media.uploadR2(resultKey, resultBytes);
@@ -486,7 +494,8 @@ public class AiService {
               String vtonCat = Objects.toString(payload.get("vtonCategory"), "");
               String sourceSessionId = Db.text(op, "SourceSessionId");
               if ("dress".equals(vtonCat) && sessionRow.get("DiemTongThe") == null) {
-                var eval = scoring.evaluate(sku, null, false);
+                var eval = scoring.enhanceStylistEvaluation(
+                    scoring.evaluate(sku, null, false), sku, null, false, resultBytes);
                 db.exec(
                     "UPDATE PhienThuDoAo SET"
                         + " DiemTongThe=?,DiemTiLeVocDang=?,DiemHoaHopMauSac=?,DiemCanBangHoaTiet=?,DiemTruPhat=?,QuyTacTiLeApDung=?,XepHangThamMy=?,LoiNhanXet=?"
@@ -511,7 +520,8 @@ public class AiService {
                     String prevSku = Db.text(prevRows.getFirst(), "MaBienThe");
                     if (("upper_body".equals(vtonCat) && "lower_body".equals(prevCat))
                         || ("lower_body".equals(vtonCat) && "upper_body".equals(prevCat))) {
-                      var eval = scoring.evaluate(sku, prevSku, false);
+                      var eval = scoring.enhanceStylistEvaluation(
+                          scoring.evaluate(sku, prevSku, false), sku, prevSku, false, resultBytes);
                       db.exec(
                           "UPDATE PhienThuDoAo SET"
                               + " DiemTongThe=?,DiemTiLeVocDang=?,DiemHoaHopMauSac=?,DiemCanBangHoaTiet=?,DiemTruPhat=?,QuyTacTiLeApDung=?,XepHangThamMy=?,LoiNhanXet=?"

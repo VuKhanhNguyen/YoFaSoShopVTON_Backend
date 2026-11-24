@@ -54,6 +54,11 @@ public class ContractController {
                                   "/api/v1/auth/refresh",
                                   "/api/v1/auth/forgot-password",
                                   "/api/v1/auth/reset-password",
+                                  "/api/v1/auth/oauth/providers",
+                                  "/api/v1/auth/oauth/{provider}/start",
+                                  "/api/v1/auth/oauth/{provider}/callback",
+                                  "/api/v1/auth/oauth/exchange",
+                                  "/api/v1/auth/oauth/confirm-link",
                                   "/api/v1/chat/config",
                                   "/api/v1/chat/messages",
                                   "/api/v1/chat/images")

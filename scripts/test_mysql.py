@@ -29,9 +29,9 @@ try:
   assert len(inserts)==19
   seed_sql='USE yofaso_test; DELETE FROM VaiTro; START TRANSACTION;\n'+'\n'.join(inserts)+'\nCOMMIT;\nSELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_TYPE=\'BASE TABLE\';'
   check=subprocess.run([str(cli),'--protocol=tcp','-h127.0.0.1',f'-P{port}','-uroot','--default-character-set=utf8mb4','--batch','--skip-column-names'],input=seed_sql,text=True,encoding='utf-8',capture_output=True,env=cli_env,check=True)
-  assert check.stdout.strip().splitlines()[-1]=='19',check.stdout
-  (be/'reports/erd-seed-verification.json').write_text(json.dumps({'tables':19,'seedInsertGroups':19,'foreignKeysEnabled':True,'isolatedMySQL':True,'schemaSourceSha256':hashlib.sha256((be.parent/'yofasoshop_db.sql').read_bytes()).hexdigest(),'seedSourceSha256':hashlib.sha256((be.parent/'yofaso_insert_data.sql').read_bytes()).hexdigest()},indent=2),encoding='utf-8')
-  print('PASS: original 19 seed groups import with foreign keys enabled; exactly 19 tables.')
+  assert check.stdout.strip().splitlines()[-1]=='22',check.stdout
+  (be/'reports/erd-seed-verification.json').write_text(json.dumps({'tables':22,'seedInsertGroups':len(inserts),'foreignKeysEnabled':True,'isolatedMySQL':True,'schemaSourceSha256':hashlib.sha256((be.parent/'yofasoshop_db.sql').read_bytes()).hexdigest(),'seedSourceSha256':hashlib.sha256((be.parent/'yofaso_insert_data.sql').read_bytes()).hexdigest()},indent=2),encoding='utf-8')
+  print('PASS: seed groups import with foreign keys enabled; exactly 22 tables.')
   sys.exit(0)
  if '--demo-only' in sys.argv:
   sql='USE yofaso_test;\n'

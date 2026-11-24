@@ -242,5 +242,12 @@
     "MaPhienThuDo",
     "DaDoc",
     "ThoiGianGui"
+  ],
+  "LienKetDangNhap": [
+    "MaLienKet",
+    "MaNguoiDung",
+    "NhaCungCap",
+    "MaDinhDanhNgoai",
+    "NgayLienKet"
   ]
 }

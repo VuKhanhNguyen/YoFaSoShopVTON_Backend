@@ -47,7 +47,7 @@ public class AuthController {
   public record Profile(
       @NotBlank @Size(max = 100) String fullName,
       @Email @Size(max = 100) String email,
-      @Pattern(regexp = "[0-9+]{9,15}") String phone,
+      @Pattern(regexp = "^$|^[0-9+]{9,15}$") String phone,
       @Size(max=72) String currentPassword,
       LocalDate dateOfBirth,
       String gender) {}
@@ -113,13 +113,22 @@ public class AuthController {
     return auth.me(a.getName());
   }
 
-  /** Cập nhật tên/email của mình; không có field đổi role. */
+  /** Cập nhật tên/email/SĐT của mình; không có field đổi role. */
   @PatchMapping("/me")
   @Transactional
   public Map<String, Object> profile(Authentication a, @Valid @RequestBody Profile b) {
     String email=AccountEmail.reserve(db,b.email(),a.getName());
     String previous=Db.text(db.one("SELECT Email FROM NguoiDung WHERE MaNguoiDung=?",a.getName()),"Email");
-    if(email!=null && !email.equalsIgnoreCase(previous.trim())) auth.confirmPassword(a.getName(),b.currentPassword());
+    // Chỉ yêu cầu mật khẩu hiện tại khi THAY ĐỔI email đã có; tài khoản Facebook chưa có email được phép bổ sung lần đầu.
+    if(email!=null && !previous.isBlank() && !email.equalsIgnoreCase(previous.trim())) auth.confirmPassword(a.getName(),b.currentPassword());
+    String cleanPhone = (b.phone() == null || b.phone().isBlank()) ? null : b.phone().trim();
+    if (cleanPhone != null) {
+      long dupPhone = db.count(
+          "SELECT COUNT(*) FROM NguoiDung WHERE SoDienThoai=? AND MaNguoiDung<>?",
+          cleanPhone,
+          a.getName());
+      Problem.require(dupPhone == 0, 409, "PHONE_IN_USE", "Số điện thoại này đã được sử dụng bởi tài khoản khác.");
+    }
     String gender = (b.gender() != null && Set.of("NAM", "NU", "KHAC").contains(b.gender().toUpperCase(Locale.ROOT)))
         ? b.gender().toUpperCase(Locale.ROOT) : null;
     db.exec(
@@ -127,7 +136,7 @@ public class AuthController {
             + " MaNguoiDung=?",
         b.fullName(),
         email,
-        b.phone(),
+        cleanPhone,
         b.dateOfBirth(),
         gender,
         a.getName());
@@ -225,13 +234,13 @@ public class AuthController {
         a.getName());
   }
 
-  /** Thêm địa chỉ; khóa user để chỉ giữ một mặc định. */
+  /** Thêm địa chỉ; khóa user để chỉ giữ một mặc định và đồng bộ SĐT vào hồ sơ nếu tài khoản social chưa có SĐT. */
   @PostMapping("/me/addresses")
   @Transactional
   @ResponseStatus(org.springframework.http.HttpStatus.CREATED)
   public Map<String, Object> address(Authentication a, @Valid @RequestBody Address b) {
     var address = addressText(b);
-    db.one("SELECT MaNguoiDung FROM NguoiDung WHERE MaNguoiDung=? FOR UPDATE", a.getName());
+    var userRow = db.one("SELECT MaNguoiDung, SoDienThoai FROM NguoiDung WHERE MaNguoiDung=? FOR UPDATE", a.getName());
     if (b.defaultAddress())
       db.exec("UPDATE SoDiaChi SET LaMacDinh=0 WHERE MaNguoiDung=?", a.getName());
     String id = Db.id("DC");
@@ -247,6 +256,14 @@ public class AuthController {
         address.ward(),
         address.city(),
         b.defaultAddress());
+    // Nếu tài khoản social chưa có SoDienThoai và SĐT giao hàng chưa thuộc tài khoản nào khác -> tự đồng bộ
+    if (Db.text(userRow, "SoDienThoai").isBlank() && b.phone() != null && !b.phone().isBlank()) {
+      String cleanPhone = b.phone().trim();
+      long used = db.count("SELECT COUNT(*) FROM NguoiDung WHERE SoDienThoai=? AND MaNguoiDung<>?", cleanPhone, a.getName());
+      if (used == 0) {
+        db.exec("UPDATE NguoiDung SET SoDienThoai=? WHERE MaNguoiDung=? AND SoDienThoai IS NULL", cleanPhone, a.getName());
+      }
+    }
     return Map.of("addressId", id);
   }
 

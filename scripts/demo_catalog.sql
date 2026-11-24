@@ -1,5 +1,5 @@
 -- DU LIEU GIA LAP CHO POSTMAN, KHONG PHAI KET QUA MODEL.
--- Chi chay thu cong tren database DEV moi, sau khi import db/schema.sql (19 bang).
+-- Chi chay thu cong tren database DEV moi, sau khi import db/schema.sql (22 bang).
 -- Chon schema dev trong Workbench va xem SELECT DATABASE() truoc khi chay.
 -- Khong tu chay khi app khoi dong, khong DROP/UPDATE du lieu da co.
 SELECT DATABASE() AS KiemTraDatabaseDevTruocKhiChay;

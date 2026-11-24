@@ -4,11 +4,13 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import com.yofaso.shop.chat.OpenRouterClient;
 import com.yofaso.shop.common.Db;
 import com.yofaso.shop.scoring.ScoringService;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -66,6 +68,26 @@ class ScoringServiceTest {
     var breakdown = (Map<String, Map<String, Object>>) res.get("breakdown");
     assertTrue(breakdown.get("proportion").get("stylistNote").toString().contains("1/3 - 2/3"));
     assertTrue(breakdown.get("color").get("stylistNote").toString().contains("Xanh Navy"));
+    assertFalse(breakdown.get("color").get("stylistNote").toString().contains("#"), "Không lộ mã HEX thô cho khách");
+    var swatches = (List<Map<String, Object>>) res.get("colorSwatches");
+    assertEquals(2, swatches.size());
+    var recColors = (List<Map<String, Object>>) res.get("recommendedColors");
+    assertFalse(recColors.isEmpty());
+
+    // Kiểm tra lớp AI Stylist remake giữ nguyên điểm 40/40/20 và làm đẹp lời nhận xét + lọc HEX
+    var mockLlm = mock(OpenRouterClient.class);
+    when(mockLlm.isConfigured()).thenReturn(true);
+    when(mockLlm.complete(anyList(), isNull())).thenReturn(Optional.of(
+        new OpenRouterClient.CompletionResult(
+            "“Bộ phối xanh navy cùng quần trắng (#FFFFFF) tạo phom dáng cao ráo và thanh lịch chuẩn quý ông.”",
+            "nvidia/z-ai/glm-5.3-flash",
+            true)));
+    var aiService = new ScoringService(db, mapper, mockLlm);
+    var enhanced = aiService.enhanceStylistEvaluation(res, "BT_POLO", "BT_QUAN", true, null);
+    assertEquals(100, enhanced.get("total"));
+    assertEquals(true, enhanced.get("stylistEnhanced"));
+    assertFalse(enhanced.get("stylistComment").toString().contains("#FFFFFF"));
+    assertTrue(enhanced.get("stylistComment").toString().contains("phom dáng cao ráo"));
 
     var dressRes = service.evaluate("BT_DRESS", null, false);
     assertEquals("PROP_06", dressRes.get("proportionRule"));

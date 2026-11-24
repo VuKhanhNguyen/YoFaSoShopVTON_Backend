@@ -140,6 +140,12 @@ public class AuthService {
                 + " membership,AnhDaiDien AS avatarKey FROM NguoiDung WHERE MaNguoiDung=?",
             id);
     user.put("roles", roles(id));
+    user.put(
+        "linkedProviders",
+        db.rows("SELECT NhaCungCap FROM LienKetDangNhap WHERE MaNguoiDung=? ORDER BY NgayLienKet", id)
+            .stream()
+            .map(r -> Db.text(r, "NhaCungCap"))
+            .toList());
     String avatarKey = Db.text(user, "avatarKey");
     if (!avatarKey.isEmpty()) {
       user.put("avatarUrl", "/api/v1/users/" + id + "/avatar?v=" + Idempotency.hash(avatarKey).substring(0, 8));
@@ -193,6 +199,11 @@ public class AuthService {
         passwords.encode(next),
         id);
     db.runtime().bump(id);
+  }
+
+  /** Cấp cặp JWT + refresh token cho các luồng xác thực nội bộ (đăng nhập thường & OAuth2). */
+  Map<String, Object> issueTokens(String id) {
+    return tokens(id);
   }
 
   /** Cấp access và refresh; refresh chỉ lưu SHA256 trong manifest riêng. */

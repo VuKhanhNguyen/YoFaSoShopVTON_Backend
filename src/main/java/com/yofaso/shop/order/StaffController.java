@@ -182,6 +182,7 @@ public class StaffController {
       return Map.of("deleted", false, "locked", true, "message", "Tài khoản có dữ liệu lịch sử đơn hàng hoặc ca làm việc nên hệ thống đã tự động khóa bảo toàn.");
     }
 
+    db.exec("DELETE FROM LienKetDangNhap WHERE MaNguoiDung=?", id);
     db.exec("DELETE FROM NguoiDung_VaiTro WHERE MaNguoiDung=?", id);
     db.exec("DELETE FROM SoDiaChi WHERE MaNguoiDung=?", id);
     db.exec("DELETE FROM NguoiDung_KhuyenMai WHERE MaNguoiDung=?", id);

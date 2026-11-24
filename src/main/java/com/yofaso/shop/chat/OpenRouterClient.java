@@ -23,11 +23,12 @@ import org.springframework.stereotype.Service;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Multi-provider LLM client (Groq -> Google Gemini AI Studio -> OpenRouter).
- * - Thu tu uu tien doi linh hoat qua 1 bien duy nhat: LLM_PROVIDER_ORDER (mac dinh: groq,gemini,openrouter).
- * - Chu dong chuyen model/provider truoc khi can quota (doc header x-ratelimit-* cua Groq,
- *   theo doi RPM/RPD cua Gemini, kiem tra /api/v1/key cua OpenRouter) de khach khong bao gio bi ngat cau tra loi.
- * - Khong them SDK ngoai; dung chuan Java HttpClient + Jackson JsonMapper cua Spring Boot.
+ * Multi-provider LLM router (Groq / Google Gemini AI Studio / NVIDIA NIM / OpenRouter).
+ * - Tuyen Chatbot (text): LLM_PROVIDER_ORDER (mac dinh: groq,gemini,nvidia,openrouter).
+ * - Tuyen Vision / AI Stylist VTON: LLM_VISION_PROVIDER_ORDER (mac dinh: gemini,nvidia,openrouter),
+ *   tu dong bo qua model text-only (nhu Groq text va nvidia/nemotron-3.5-lightning-30b-a3b) khi co anh.
+ * - Chu dong chuyen model/provider truoc khi can quota (header Groq, RPM/RPD Gemini & NVIDIA NIM,
+ *   /api/v1/key OpenRouter) de khach hang khong bao gio bi ngat cau tra loi.
  */
 @Service
 public class OpenRouterClient {
@@ -35,9 +36,12 @@ public class OpenRouterClient {
 
   public static final String PROVIDER_GROQ = "groq";
   public static final String PROVIDER_GEMINI = "gemini";
+  public static final String PROVIDER_NVIDIA = "nvidia";
   public static final String PROVIDER_OPENROUTER = "openrouter";
 
-  public static final String DEFAULT_PROVIDER_ORDER = "groq,gemini,openrouter";
+  public static final String DEFAULT_PROVIDER_ORDER = "groq,gemini,nvidia,openrouter";
+  public static final String DEFAULT_VISION_PROVIDER_ORDER = "gemini,nvidia,openrouter";
+
   public static final String DEFAULT_GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
   public static final String DEFAULT_GROQ_MODELS =
       "openai/gpt-oss-120b,qwen/qwen3.8-27b,openai/gpt-oss-20b,allam-2-7b";
@@ -47,6 +51,11 @@ public class OpenRouterClient {
       "gemini-3.5-flash-lite,gemini-3.1-flash-lite-preview,gemini-3.8-flash,gemini-3.6-flash,"
           + "gemini-3-flash-preview,gemini-2.5-flash,gemini-2.5-flash-lite,gemini-4-hydrogen,"
           + "gemma-4-31b-it,gemma-4-26b-a4b-it";
+
+  public static final String DEFAULT_NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
+  public static final String DEFAULT_NVIDIA_MODELS =
+      "nvidia/nemotron-3.5-lightning-30b-a3b,z-ai/glm-5.3-flash,minimaxai/minimax-m3.1-flash,"
+          + "mistralai/mistral-large-4-1t-a52b,stepfun-ai/step-5-preview";
 
   public static final String DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions";
   public static final String DEFAULT_OPENROUTER_MODELS =
@@ -115,6 +124,7 @@ public class OpenRouterClient {
   }
 
   private final List<ProviderConfig> providers;
+  private final List<ProviderConfig> visionProviders;
   private final double temperature;
   private final int maxTokens;
   private final Duration timeout;
@@ -122,6 +132,7 @@ public class OpenRouterClient {
   private final String siteName;
   private final int groqMinRemainingRpd;
   private final int geminiMinRemainingRpd;
+  private final int nvidiaMaxRpm;
   private final int openRouterMinRemainingRpd;
   private final JsonMapper json;
   private final HttpClient http;
@@ -130,7 +141,7 @@ public class OpenRouterClient {
   private final ConcurrentHashMap<String, Long> modelCooldownUntilMs = new ConcurrentHashMap<>();
   /** Cooldown toan provider (VD: OpenRouter het free_model_daily_requests). */
   private final ConcurrentHashMap<String, Long> providerCooldownUntilMs = new ConcurrentHashMap<>();
-  /** Bo dem RPM/RPD cuc bo cho Gemini (do Google REST API khong tra header remaining). */
+  /** Bo dem RPM/RPD cuc bo cho Gemini & NVIDIA NIM. */
   private final ConcurrentHashMap<String, LocalQuotaBucket> localQuotas = new ConcurrentHashMap<>();
   /** Cache ket qua /api/v1/key cua OpenRouter. */
   private volatile long openRouterQuotaCheckedAtMs = 0L;
@@ -139,6 +150,7 @@ public class OpenRouterClient {
   @Autowired
   public OpenRouterClient(
       @Value("${app.llm.provider-order:" + DEFAULT_PROVIDER_ORDER + "}") String providerOrderCsv,
+      @Value("${app.llm.vision-provider-order:" + DEFAULT_VISION_PROVIDER_ORDER + "}") String visionOrderCsv,
       @Value("${app.groq.api-key:}") String groqApiKey,
       @Value("${app.groq.base-url:" + DEFAULT_GROQ_BASE_URL + "}") String groqBaseUrl,
       @Value("${app.groq.models:" + DEFAULT_GROQ_MODELS + "}") String groqModelsCsv,
@@ -147,6 +159,10 @@ public class OpenRouterClient {
       @Value("${app.gemini.base-url:" + DEFAULT_GEMINI_BASE_URL + "}") String geminiBaseUrl,
       @Value("${app.gemini.models:" + DEFAULT_GEMINI_MODELS + "}") String geminiModelsCsv,
       @Value("${app.gemini.min-remaining-rpd:2}") int geminiMinRemainingRpd,
+      @Value("${app.nvidia.api-key:}") String nvidiaApiKey,
+      @Value("${app.nvidia.base-url:" + DEFAULT_NVIDIA_BASE_URL + "}") String nvidiaBaseUrl,
+      @Value("${app.nvidia.models:" + DEFAULT_NVIDIA_MODELS + "}") String nvidiaModelsCsv,
+      @Value("${app.nvidia.max-rpm:40}") int nvidiaMaxRpm,
       @Value("${app.openrouter.api-key:}") String openRouterApiKey,
       @Value("${app.openrouter.base-url:" + DEFAULT_OPENROUTER_BASE_URL + "}") String openRouterBaseUrl,
       @Value("${app.openrouter.models:" + DEFAULT_OPENROUTER_MODELS + "}") String openRouterModelsCsv,
@@ -164,6 +180,7 @@ public class OpenRouterClient {
     this.siteName = siteName == null ? "YoFaSo Shop" : siteName.trim();
     this.groqMinRemainingRpd = Math.max(1, groqMinRemainingRpd);
     this.geminiMinRemainingRpd = Math.max(1, geminiMinRemainingRpd);
+    this.nvidiaMaxRpm = Math.max(5, nvidiaMaxRpm);
     this.openRouterMinRemainingRpd = Math.max(1, openRouterMinRemainingRpd);
     this.json = json;
     this.http = HttpClient.newBuilder()
@@ -175,7 +192,7 @@ public class OpenRouterClient {
     byName.put(PROVIDER_GROQ, new ProviderConfig(
         PROVIDER_GROQ,
         cleanStr(groqApiKey),
-        blankDefault(groqBaseUrl, DEFAULT_GROQ_BASE_URL),
+        normalizeChatUrl(groqBaseUrl, DEFAULT_GROQ_BASE_URL),
         parseCsv(groqModelsCsv),
         false));
     byName.put(PROVIDER_GEMINI, new ProviderConfig(
@@ -184,26 +201,38 @@ public class OpenRouterClient {
         blankDefault(geminiBaseUrl, DEFAULT_GEMINI_BASE_URL),
         parseCsv(geminiModelsCsv),
         true));
+    byName.put(PROVIDER_NVIDIA, new ProviderConfig(
+        PROVIDER_NVIDIA,
+        cleanStr(nvidiaApiKey),
+        normalizeChatUrl(nvidiaBaseUrl, DEFAULT_NVIDIA_BASE_URL),
+        parseCsv(nvidiaModelsCsv),
+        false));
     byName.put(PROVIDER_OPENROUTER, new ProviderConfig(
         PROVIDER_OPENROUTER,
         cleanStr(openRouterApiKey),
-        blankDefault(openRouterBaseUrl, DEFAULT_OPENROUTER_BASE_URL),
+        normalizeChatUrl(openRouterBaseUrl, DEFAULT_OPENROUTER_BASE_URL),
         parseCsv(openRouterModelsCsv),
         false));
 
-    var ordered = new ArrayList<ProviderConfig>();
-    for (String pName : parseCsv(providerOrderCsv)) {
-      ProviderConfig cfg = byName.get(pName.toLowerCase(Locale.ROOT));
-      if (cfg != null && !ordered.contains(cfg)) {
-        ordered.add(cfg);
-      }
-    }
-    for (ProviderConfig cfg : byName.values()) {
-      if (!ordered.contains(cfg)) {
-        ordered.add(cfg);
-      }
-    }
-    this.providers = List.copyOf(ordered);
+    this.providers = orderProviders(providerOrderCsv, byName, true);
+    this.visionProviders = orderProviders(visionOrderCsv, byName, false);
+  }
+
+  /** Constructor tuong thich nguoc cho test 3 provider (Groq + Gemini + OpenRouter). */
+  public OpenRouterClient(
+      String providerOrderCsv,
+      String groqApiKey, String groqBaseUrl, String groqModelsCsv, int groqMinRemainingRpd,
+      String geminiApiKey, String geminiBaseUrl, String geminiModelsCsv, int geminiMinRemainingRpd,
+      String openRouterApiKey, String openRouterBaseUrl, String openRouterModelsCsv, int openRouterMinRemainingRpd,
+      double temperature, int maxTokens, int timeoutSeconds,
+      String siteUrl, String siteName, JsonMapper json) {
+    this(
+        providerOrderCsv, DEFAULT_VISION_PROVIDER_ORDER,
+        groqApiKey, groqBaseUrl, groqModelsCsv, groqMinRemainingRpd,
+        geminiApiKey, geminiBaseUrl, geminiModelsCsv, geminiMinRemainingRpd,
+        "", DEFAULT_NVIDIA_BASE_URL, "", 40,
+        openRouterApiKey, openRouterBaseUrl, openRouterModelsCsv, openRouterMinRemainingRpd,
+        temperature, maxTokens, timeoutSeconds, siteUrl, siteName, json);
   }
 
   /** Constructor tuong thich nguoc cho test chi dung OpenRouter. */
@@ -218,11 +247,31 @@ public class OpenRouterClient {
       String siteName,
       JsonMapper json) {
     this(
-        PROVIDER_OPENROUTER,
+        PROVIDER_OPENROUTER, DEFAULT_VISION_PROVIDER_ORDER,
         "", DEFAULT_GROQ_BASE_URL, "", 5,
         "", DEFAULT_GEMINI_BASE_URL, "", 2,
+        "", DEFAULT_NVIDIA_BASE_URL, "", 40,
         openRouterApiKey, openRouterBaseUrl, openRouterModelsCsv, 2,
         temperature, maxTokens, timeoutSeconds, siteUrl, siteName, json);
+  }
+
+  private static List<ProviderConfig> orderProviders(
+      String orderCsv, Map<String, ProviderConfig> byName, boolean appendRemaining) {
+    var ordered = new ArrayList<ProviderConfig>();
+    for (String pName : parseCsv(orderCsv)) {
+      ProviderConfig cfg = byName.get(pName.toLowerCase(Locale.ROOT));
+      if (cfg != null && !ordered.contains(cfg)) {
+        ordered.add(cfg);
+      }
+    }
+    if (appendRemaining) {
+      for (ProviderConfig cfg : byName.values()) {
+        if (!ordered.contains(cfg)) {
+          ordered.add(cfg);
+        }
+      }
+    }
+    return List.copyOf(ordered);
   }
 
   public boolean isConfigured() {
@@ -232,6 +281,14 @@ public class OpenRouterClient {
   public List<String> configuredProviders() {
     return providers.stream()
         .filter(ProviderConfig::configured)
+        .map(ProviderConfig::name)
+        .toList();
+  }
+
+  public List<String> configuredVisionProviders() {
+    return visionProviders.stream()
+        .filter(ProviderConfig::configured)
+        .filter(p -> p.models().stream().anyMatch(m -> isVisionCapable(p.name(), m)))
         .map(ProviderConfig::name)
         .toList();
   }
@@ -248,30 +305,42 @@ public class OpenRouterClient {
   }
 
   /**
-   * Thu lan luot tung provider theo LLM_PROVIDER_ORDER (mac dinh groq -> gemini -> openrouter)
-   * va tung model trong moi provider. Chu dong bo qua model/provider dang cooldown hoac sap can quota.
+   * - Khi KHONG co anh: di theo LLM_PROVIDER_ORDER (mac dinh groq -> gemini -> nvidia -> openrouter).
+   * - Khi CO anh (chat kem anh / AI Stylist VTON): uu tien tuyen Vision LLM_VISION_PROVIDER_ORDER
+   *   (mac dinh gemini -> nvidia [4 model vision] -> openrouter [model VL/Omni]),
+   *   neu tat ca model Vision deu ban/chua co key se fallback muot ve tuyen text-only.
    */
   public Optional<CompletionResult> complete(List<Map<String, Object>> messages, String imageDataUrl) {
     if (!isConfigured()) {
       return Optional.empty();
     }
     long nowMs = System.currentTimeMillis();
+    boolean hasImage = imageDataUrl != null && !imageDataUrl.isBlank();
 
-    // Vong 1: Chi goi cac provider/model dang khoe manh (khong cooldown, khong gan can quota).
-    Optional<CompletionResult> primary = tryProviders(messages, imageDataUrl, nowMs, false);
+    if (hasImage) {
+      Optional<CompletionResult> vision = tryProviders(visionProviders, messages, imageDataUrl, nowMs, false, true);
+      if (vision.isPresent()) {
+        return vision;
+      }
+      log.info("No vision model available for image request -> falling back smoothly to text-only route.");
+    }
+
+    Optional<CompletionResult> primary = tryProviders(providers, messages, null, nowMs, false, false);
     if (primary.isPresent()) {
       return primary;
     }
 
-    // Vong 2 (Emergency safety net): Neu tat ca deu dang bi soft-cooldown do gan can quota,
-    // van thu lai 1 luot cuoi truoc khi roi ve local fallback de khach khong bi ngat cau tra loi.
     boolean anySkippedBySoftCooldown = providers.stream()
         .filter(ProviderConfig::configured)
         .anyMatch(p -> isProviderCoolingDown(p.name(), nowMs)
             || p.models().stream().anyMatch(m -> isModelCoolingDown(p.name(), m, nowMs)));
     if (anySkippedBySoftCooldown) {
       log.warn("All LLM providers/models in soft cooldown -> attempting final fallback pass before local reply.");
-      Optional<CompletionResult> emergency = tryProviders(messages, imageDataUrl, nowMs, true);
+      if (hasImage) {
+        Optional<CompletionResult> emergencyVision = tryProviders(visionProviders, messages, imageDataUrl, nowMs, true, true);
+        if (emergencyVision.isPresent()) return emergencyVision;
+      }
+      Optional<CompletionResult> emergency = tryProviders(providers, messages, null, nowMs, true, false);
       if (emergency.isPresent()) {
         return emergency;
       }
@@ -282,15 +351,23 @@ public class OpenRouterClient {
   }
 
   private Optional<CompletionResult> tryProviders(
+      List<ProviderConfig> route,
       List<Map<String, Object>> messages,
       String imageDataUrl,
       long nowMs,
-      boolean ignoreSoftQuota) {
-    List<Map<String, Object>> openAiWithImage = attachImageToLastUserMessage(messages, imageDataUrl);
+      boolean ignoreSoftQuota,
+      boolean visionOnly) {
+    boolean hasImage = imageDataUrl != null && !imageDataUrl.isBlank();
+    List<Map<String, Object>> openAiWithImage = hasImage ? attachImageToLastUserMessage(messages, imageDataUrl) : messages;
 
-    for (ProviderConfig provider : providers) {
+    for (ProviderConfig provider : route) {
       if (!provider.configured()) continue;
       if (!ignoreSoftQuota && isProviderCoolingDown(provider.name(), nowMs)) {
+        continue;
+      }
+      if (!ignoreSoftQuota && PROVIDER_NVIDIA.equals(provider.name())
+          && isNvidiaNearRpmLimit(nowMs)) {
+        log.info("NVIDIA NIM near local {} RPM safety limit -> pre-switching provider.", nvidiaMaxRpm);
         continue;
       }
       if (!ignoreSoftQuota && PROVIDER_OPENROUTER.equals(provider.name())
@@ -299,6 +376,9 @@ public class OpenRouterClient {
       }
 
       for (String model : provider.models()) {
+        if (visionOnly && !isVisionCapable(provider.name(), model)) {
+          continue;
+        }
         if (!ignoreSoftQuota && isModelCoolingDown(provider.name(), model, nowMs)) {
           continue;
         }
@@ -310,16 +390,16 @@ public class OpenRouterClient {
 
         Optional<String> reply;
         if (provider.nativeGemini()) {
-          reply = callGeminiNative(provider, model, messages, imageDataUrl);
-          if (reply.isEmpty() && imageDataUrl != null && !imageDataUrl.isBlank()) {
+          reply = callGeminiNative(provider, model, messages, hasImage ? imageDataUrl : null);
+          if (reply.isEmpty() && hasImage && !visionOnly) {
             reply = callGeminiNative(provider, model, messages, null);
           }
-        } else if (PROVIDER_GROQ.equals(provider.name())) {
-          // Cac model text cua Groq khong nhan image_url; goi thang text de khong ton luot 400 vo ich.
-          reply = callOpenAiCompatible(provider, model, messages);
         } else {
-          reply = callOpenAiCompatible(provider, model, openAiWithImage);
-          if (reply.isEmpty() && imageDataUrl != null && !imageDataUrl.isBlank()) {
+          List<Map<String, Object>> payload = (hasImage && isVisionCapable(provider.name(), model))
+              ? openAiWithImage
+              : messages;
+          reply = callOpenAiCompatible(provider, model, payload);
+          if (reply.isEmpty() && hasImage && !visionOnly && payload == openAiWithImage) {
             reply = callOpenAiCompatible(provider, model, messages);
           }
         }
@@ -331,6 +411,21 @@ public class OpenRouterClient {
       }
     }
     return Optional.empty();
+  }
+
+  /** Xac dinh model co ho tro doc anh (Vision/Multimodal) hay chi text-only. */
+  public static boolean isVisionCapable(String providerName, String model) {
+    if (providerName == null || model == null) return false;
+    String p = providerName.toLowerCase(Locale.ROOT);
+    String m = model.toLowerCase(Locale.ROOT);
+    return switch (p) {
+      case PROVIDER_GEMINI -> true;
+      case PROVIDER_NVIDIA -> !m.contains("nemotron-3.5-lightning") && !m.contains("embed") && !m.contains("rerank");
+      case PROVIDER_OPENROUTER -> m.contains("omni") || m.contains("-vl") || m.contains("gemma-4")
+          || m.contains("vision") || m.contains("gemini");
+      case PROVIDER_GROQ -> m.contains("vision") || m.contains("llama-4-scout") || m.contains("llama-4-maverick");
+      default -> false;
+    };
   }
 
   @SuppressWarnings("unchecked")
@@ -347,6 +442,8 @@ public class OpenRouterClient {
           .timeout(timeout)
           .header("Authorization", "Bearer " + provider.apiKey())
           .header("Content-Type", "application/json")
+          .header("Accept", "application/json")
+          .header("User-Agent", "YoFaSoShop/1.0")
           .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(body)));
       if (PROVIDER_OPENROUTER.equals(provider.name())) {
         builder.header("X-Title", siteName);
@@ -360,6 +457,9 @@ public class OpenRouterClient {
 
       if (PROVIDER_GROQ.equals(provider.name())) {
         updateGroqQuotaFromHeaders(model, response.headers(), status);
+      } else if (PROVIDER_NVIDIA.equals(provider.name()) && status >= 200 && status < 300) {
+        localQuotas.computeIfAbsent(PROVIDER_NVIDIA, k -> new LocalQuotaBucket())
+            .recordRequest(System.currentTimeMillis());
       } else if (PROVIDER_OPENROUTER.equals(provider.name()) && status >= 200 && status < 300) {
         if (openRouterRemainingDaily != Integer.MAX_VALUE && openRouterRemainingDaily > 0) {
           openRouterRemainingDaily--;
@@ -456,7 +556,6 @@ public class OpenRouterClient {
       var sb = new StringBuilder();
       for (Object partObj : parts) {
         if (!(partObj instanceof Map<?, ?> partMap)) continue;
-        // Bo qua suy luan noi bo cua cac model Gemini thinking (thought: true)
         if (Boolean.TRUE.equals(partMap.get("thought"))) continue;
         Object textObj = partMap.get("text");
         if (textObj instanceof String s) {
@@ -520,7 +619,6 @@ public class OpenRouterClient {
     String systemText = systemParts.toString().trim();
     if (!systemText.isEmpty()) {
       if (isGemma) {
-        // Gemma tren Google AI Studio khong chap nhan systemInstruction -> ghep vao luot user dau tien.
         for (Map<String, Object> turn : contents) {
           if ("user".equals(turn.get("role"))) {
             @SuppressWarnings("unchecked")
@@ -559,12 +657,6 @@ public class OpenRouterClient {
     return body;
   }
 
-  /**
-   * Doc truc tiep response headers cua Groq (x-ratelimit-remaining-requests, x-ratelimit-reset-requests,
-   * x-ratelimit-remaining-tokens, x-ratelimit-reset-tokens).
-   * Khi so request con lai trong ngay <= groqMinRemainingRpd (mac dinh 5), tu dong danh dau cooldown
-   * de luot sau chuyen thang sang model/provider ke tiep (Gemini) ma khong de dut giua chung.
-   */
   void updateGroqQuotaFromHeaders(String model, HttpHeaders headers, int status) {
     if (headers == null) return;
     OptionalInt remReq = parseHeaderInt(headers, "x-ratelimit-remaining-requests");
@@ -594,7 +686,6 @@ public class OpenRouterClient {
   private void handleHttpFailureCooldown(
       String providerName, String model, int status, HttpHeaders headers, String errorBody) {
     if (status == 404) {
-      // Model ID khong ton tai / bi go -> tranh goi lai suot 6 gio.
       markModelCooldown(providerName, model, Duration.ofHours(6).toMillis());
       return;
     }
@@ -621,7 +712,6 @@ public class OpenRouterClient {
     }
   }
 
-  /** Kiem tra nhe /api/v1/key cua OpenRouter (khong ton quota LLM, cache 5 phut). */
   @SuppressWarnings("unchecked")
   private boolean isOpenRouterNearDailyLimit(ProviderConfig provider, long nowMs) {
     if (!provider.baseUrl().contains("openrouter.ai")) {
@@ -645,7 +735,6 @@ public class OpenRouterClient {
           }
         }
       } catch (Exception ignored) {
-        // Neu check metadata that bai thi van cho goi OpenRouter binh thuong.
       }
     }
     if (openRouterRemainingDaily <= openRouterMinRemainingRpd) {
@@ -654,6 +743,11 @@ public class OpenRouterClient {
       return true;
     }
     return false;
+  }
+
+  private boolean isNvidiaNearRpmLimit(long nowMs) {
+    LocalQuotaBucket bucket = localQuotas.get(PROVIDER_NVIDIA);
+    return bucket != null && bucket.isNearLimit(new ModelLimits(nvidiaMaxRpm, 0, 0), nowMs);
   }
 
   private boolean isGeminiModelNearLocalLimit(String model, long nowMs) {
@@ -667,7 +761,6 @@ public class OpenRouterClient {
         .recordRequest(System.currentTimeMillis());
   }
 
-  /** Han muc free tier thuc te theo bang Google AI Studio de chu dong doi model truoc khi dinh 429. */
   private ModelLimits geminiModelLimits(String model) {
     String m = model.toLowerCase(Locale.ROOT);
     if (m.startsWith("gemma-4")) {
@@ -722,7 +815,6 @@ public class OpenRouterClient {
       double seconds = Double.parseDouble(s);
       return Math.max(0L, (long) (seconds * 1000.0));
     } catch (NumberFormatException ignored) {
-      // Thu parse Go duration (1h2m3.4s)
     }
     Matcher m = DURATION_PART.matcher(s);
     double totalMs = 0.0;
@@ -775,7 +867,6 @@ public class OpenRouterClient {
     return Objects.toString(content, "");
   }
 
-  /** Loai bo the suy luan noi bo <think>...</think> neu model reasoning tra kem trong content. */
   static String sanitizeReply(String raw) {
     if (raw == null) return "";
     String cleaned = raw.replaceAll("(?s)<think>.*?</think>", "").trim();
@@ -795,6 +886,16 @@ public class OpenRouterClient {
       }
     }
     return List.copyOf(list);
+  }
+
+  /** Cho phep dien ca ".../v1" lan ".../v1/chat/completions" trong .env ma khong bi 404. */
+  static String normalizeChatUrl(String raw, String fallback) {
+    String url = blankDefault(raw, fallback);
+    String noSlash = url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
+    if (noSlash.endsWith("/v1")) {
+      return noSlash + "/chat/completions";
+    }
+    return noSlash;
   }
 
   private static String cleanStr(String s) {

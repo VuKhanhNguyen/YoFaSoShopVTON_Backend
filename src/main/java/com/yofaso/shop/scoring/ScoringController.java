@@ -17,11 +17,16 @@ public class ScoringController {
 
   private final ScoringService scoring;
   private final com.yofaso.shop.common.Db db;
+  private final com.yofaso.shop.ai.MediaService media;
 
-  /** Nhận bộ chấm điểm dùng workbook. */
-  public ScoringController(ScoringService scoring, com.yofaso.shop.common.Db db) {
+  /** Nhận bộ chấm điểm dùng workbook + MediaService để AI Stylist đọc ảnh VTON khi có. */
+  public ScoringController(
+      ScoringService scoring,
+      com.yofaso.shop.common.Db db,
+      com.yofaso.shop.ai.MediaService media) {
     this.scoring = scoring;
     this.db = db;
+    this.media = media;
   }
 
   /** Trả bảng gốc đã trích để đối chiếu rule, không nhận điểm client gửi. */
@@ -52,7 +57,7 @@ public class ScoringController {
       org.springframework.security.core.Authentication auth) {
     var session =
         db.one(
-            "SELECT MaBienThe,TrangThaiPhien FROM PhienThuDoAo WHERE MaPhienThuDo=? AND"
+            "SELECT MaBienThe,TrangThaiPhien,DuongDanAnhKetQuaVTON FROM PhienThuDoAo WHERE MaPhienThuDo=? AND"
                 + " MaNguoiDung=? FOR UPDATE",
             id,
             auth.getName());
@@ -67,7 +72,16 @@ public class ScoringController {
         422,
         "OUTFIT_SESSION_MISMATCH",
         "Set đồ phải chứa SKU của phiên thử đồ.");
-    var score = scoring.evaluate(b.firstVariantId(), b.secondVariantId(), b.tucked());
+    byte[] vtonBytes = null;
+    String resultAsset = com.yofaso.shop.common.Db.text(session, "DuongDanAnhKetQuaVTON");
+    if (media != null && !resultAsset.isBlank()) {
+      try {
+        vtonBytes = media.bytes(resultAsset);
+      } catch (Exception ignored) {}
+    }
+    var baseScore = scoring.evaluate(b.firstVariantId(), b.secondVariantId(), b.tucked());
+    var score = scoring.enhanceStylistEvaluation(
+        baseScore, b.firstVariantId(), b.secondVariantId(), b.tucked(), vtonBytes);
     db.exec(
         "UPDATE PhienThuDoAo SET"
             + " DiemTongThe=?,DiemTiLeVocDang=?,DiemHoaHopMauSac=?,DiemCanBangHoaTiet=?,DiemTruPhat=?,QuyTacTiLeApDung=?,XepHangThamMy=?,LoiNhanXet=?"
@@ -79,7 +93,7 @@ public class ScoringController {
         score.get("penalty"),
         score.get("proportionRule"),
         score.get("tier"),
-        "Ước tính quy tắc catalog; " + score.get("advice"),
+        score.get("stylistComment") != null ? score.get("stylistComment") : score.get("advice"),
         id);
     return score;
   }

@@ -16,7 +16,7 @@ CREATE TABLE NguoiDung (
     TenDangNhap VARCHAR(50) NOT NULL COMMENT 'Tên đăng nhập hoặc SĐT xác thực',
     MatKhau VARCHAR(255) NOT NULL COMMENT 'Mật khẩu mã hóa BCrypt',
     HoVaTen VARCHAR(100) NOT NULL COMMENT 'Họ và tên đầy đủ',
-    SoDienThoai VARCHAR(15) NOT NULL COMMENT 'Số điện thoại liên hệ chính thức',
+    SoDienThoai VARCHAR(15) NULL COMMENT 'Số điện thoại liên hệ chính thức (NULL nếu đăng ký qua Google/Facebook chưa bổ sung)',
     Email VARCHAR(100) NULL COMMENT 'Địa chỉ thư điện tử',
     AnhDaiDien VARCHAR(255) NULL COMMENT 'Đường dẫn ảnh đại diện',
     DiemTichLuy INT NOT NULL DEFAULT 0 COMMENT 'Điểm thưởng thành viên mua sắm',
@@ -412,11 +412,26 @@ CREATE TABLE IF NOT EXISTS TinNhanTrucTuyen (
     CONSTRAINT FK_TinNhanTrucTuyen_PhienThuDo FOREIGN KEY (MaPhienThuDo) REFERENCES PhienThuDoAo(MaPhienThuDo) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Bảng tin nhắn trực tuyến hợp nhất: Trợ lý AI Thời trang (Guardrails) & Live Chat CSKH với Chủ shop';
 
+-- Bảng 22: LienKetDangNhap (Liên kết định danh đăng nhập bên thứ 3: Google, Facebook)
+CREATE TABLE IF NOT EXISTS LienKetDangNhap (
+    MaLienKet VARCHAR(20) NOT NULL COMMENT 'Mã định danh liên kết (VD: LK00000001)',
+    MaNguoiDung VARCHAR(20) NOT NULL COMMENT 'Khóa ngoại tham chiếu NguoiDung',
+    NhaCungCap ENUM('GOOGLE', 'FACEBOOK') NOT NULL COMMENT 'Nhà cung cấp xác thực OAuth2',
+    MaDinhDanhNgoai VARCHAR(128) NOT NULL COMMENT 'ID duy nhất bất biến do Google (sub) hoặc Facebook (id) cấp',
+    NgayLienKet DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Thời điểm liên kết tài khoản',
+    CONSTRAINT PK_LienKetDangNhap PRIMARY KEY (MaLienKet),
+    CONSTRAINT UQ_LienKetDangNhap_NhaCungCap_DinhDanh UNIQUE (NhaCungCap, MaDinhDanhNgoai),
+    CONSTRAINT UQ_LienKetDangNhap_NguoiDung_NhaCungCap UNIQUE (MaNguoiDung, NhaCungCap),
+    CONSTRAINT FK_LienKetDangNhap_NguoiDung FOREIGN KEY (MaNguoiDung)
+        REFERENCES NguoiDung(MaNguoiDung) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Bảng liên kết định danh đăng nhập bên thứ 3 (Google, Facebook) với NguoiDung';
+
 -- -------------------------------------------------------------------------------------
 -- TỐI ƯU HÓA CHỈ MỤC TÌM KIẾM (INDEX CHO HIỆU NĂNG TRUY VẤN CAO)
 -- -------------------------------------------------------------------------------------
 
 CREATE INDEX IDX_NguoiDung_SoDienThoai ON NguoiDung(SoDienThoai);
+CREATE INDEX IDX_NguoiDung_Email ON NguoiDung(Email);
 CREATE INDEX IDX_SanPham_DanhMuc ON SanPham(MaDanhMuc);
 CREATE INDEX IDX_SanPham_TrangThai ON SanPham(TrangThaiSanPham);
 CREATE INDEX IDX_BienTheSanPham_MaQuanLyHangHoa ON BienTheSanPham(MaQuanLyHangHoa);
@@ -438,6 +453,7 @@ CREATE INDEX IDX_TinNhanTrucTuyen_Phien_ThoiGian ON TinNhanTrucTuyen(MaPhienChat
 CREATE INDEX IDX_TinNhanTrucTuyen_NguoiDung_Kenh_ThoiGian ON TinNhanTrucTuyen(MaNguoiDung, KenhTroChuyen, ThoiGianGui DESC);
 CREATE INDEX IDX_TinNhanTrucTuyen_Kenh_DaDoc ON TinNhanTrucTuyen(KenhTroChuyen, DaDoc, ThoiGianGui DESC);
 CREATE INDEX IDX_TinNhanTrucTuyen_PhienThuDo ON TinNhanTrucTuyen(MaPhienThuDo);
+CREATE INDEX IDX_LienKetDangNhap_NguoiDung ON LienKetDangNhap(MaNguoiDung);
 
 -- =====================================================================================
 

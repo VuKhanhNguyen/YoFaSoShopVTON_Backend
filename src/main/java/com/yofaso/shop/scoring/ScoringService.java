@@ -1,21 +1,44 @@
 package com.yofaso.shop.scoring;
 
+import com.yofaso.shop.chat.OpenRouterClient;
 import com.yofaso.shop.common.*;
 import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.util.*;
+import java.util.regex.Pattern;
+import javax.imageio.ImageIO;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
-/** Điểm quy tắc 40/40/20 từ catalog; không phải phép đo vóc dáng thật từ ảnh render. */
+/** Điểm quy tắc 40/40/20 từ catalog + lớp AI Stylist (Vision/Text) viết lại lời nhận xét chỉn chu. */
 @Service
 public class ScoringService {
+  private static final Logger log = LoggerFactory.getLogger(ScoringService.class);
+  private static final Pattern HEX_CODE = Pattern.compile("#[A-Fa-f0-9]{6}");
+  private static final Pattern HEX_IN_PARENS = Pattern.compile("\\s*\\(#[A-Fa-f0-9]{6}\\)");
+
   private final Db db;
   private final JsonNode workbook;
+  private final OpenRouterClient llm;
+
+  /** Tương thích kiểm thử không dùng LLM. */
+  public ScoringService(Db db, JsonMapper mapper) throws java.io.IOException {
+    this(db, mapper, null);
+  }
 
   /** Nạp bản trích nguyên workbook có nguồn, không sửa Excel gốc. */
-  public ScoringService(Db db, JsonMapper mapper) throws java.io.IOException {
+  @Autowired
+  public ScoringService(Db db, JsonMapper mapper, OpenRouterClient llm) throws java.io.IOException {
     this.db = db;
+    this.llm = llm;
     try (var input = getClass().getResourceAsStream("/scoring/workbook-rules.json")) {
       if (input == null) {
         throw new IllegalStateException("Không tìm thấy file tài nguyên /scoring/workbook-rules.json trên classpath.");
@@ -32,13 +55,13 @@ public class ScoringService {
   /** Lấy feature do chủ shop duyệt và màu theo SKU, không lấy thuộc tính từ client. */
   public Map<String, Object> garment(String variant) {
     return db.one(
-        "SELECT p.*,b.MaBienThe,b.MaMauSac FROM SanPham p JOIN BienTheSanPham b ON"
+        "SELECT p.*,b.MaBienThe,b.TenMau,b.MaMauSac FROM SanPham p JOIN BienTheSanPham b ON"
             + " b.MaSanPham=p.MaSanPham WHERE b.MaBienThe=? AND"
             + " p.TrangThaiSanPham='DANG_KINH_DOANH' AND b.TrangThai<>'NGUNG_BAN'",
         variant);
   }
 
-  /** Chấm một set áo/quần hoặc đầm, thông báo rõ giả định sơ vin từ người dùng. */
+  /** Chấm một set áo/quần hoặc đầm bằng công thức 40/40/20 deterministic từ catalog. */
   public Map<String, Object> evaluate(String first, String second, boolean tucked) {
     var a = garment(first);
     Map<String, Object> b = second == null ? null : garment(second);
@@ -62,10 +85,8 @@ public class ScoringService {
     String prop = proportion(a, b, tucked);
     var propRow = ruleRow(1, prop);
     int proportion = Integer.parseInt(propRow.get(5).asText());
-    List<String> colors =
-        new ArrayList<>(Arrays.asList(Db.text(a, "MaMauSac").toUpperCase(Locale.ROOT).split(",")));
-    if (b != null)
-      colors.addAll(Arrays.asList(Db.text(b, "MaMauSac").toUpperCase(Locale.ROOT).split(",")));
+    List<String> colors = parseHexList(Db.text(a, "MaMauSac"));
+    if (b != null) colors.addAll(parseHexList(Db.text(b, "MaMauSac")));
     var colorEval = evaluateColors(colors);
     int color = colorEval.score();
     String pa = Db.text(a, "LoaiHoaTiet"), pb = b == null ? "VAI_TRON" : Db.text(b, "LoaiHoaTiet");
@@ -103,69 +124,174 @@ public class ScoringService {
     var tierNode = tierRow(tier);
     String tierLabel = cleanRuleText(tierNode.get(2).asText());
     String tierMeaning = cleanRuleText(tierNode.get(4).asText());
-    String tierAction = cleanRuleText(tierNode.get(5).asText());
     String formula = String.format("S = 0.4·%d + 0.4·%d + 0.2·%d - %d", proportion, color, pattern, penalty);
     String propNote = cleanRuleText(propRow.get(6).asText());
     String colNote = colorEval.note();
     String patNote = cleanRuleText(patRow.get(4).asText());
     String penaltyNote = penaltyNotes.isEmpty() ? "" : String.join(" ", penaltyNotes);
-    String stylistComment = tierMeaning + " " + propNote + " " + tierAction;
+    var recommendedColors = suggestHarmonyColors(colors);
+    String stylistComment = buildCleanFallbackStylistNote(
+        total, tier, tierMeaning, propNote, colNote, patNote, penaltyNote, recommendedColors);
 
     var breakdown = Map.of(
         "proportion", Map.of("score", proportion, "weight", "40%", "ruleCode", prop, "ruleName", cleanRuleText(propRow.get(1).asText()), "stylistNote", propNote),
-        "color", Map.of("score", color, "weight", "40%", "stylistNote", colNote),
+        "color", Map.of("score", color, "weight", "40%", "stylistNote", colNote, "swatches", colorEval.swatches()),
         "pattern", Map.of("score", pattern, "weight", "20%", "ruleCode", patternRule, "stylistNote", patNote),
         "penalty", Map.of("score", penalty, "rules", penalties, "stylistNote", penaltyNote)
     );
 
-    return Map.ofEntries(
-        Map.entry("total", total),
-        Map.entry("proportion", proportion),
-        Map.entry("color", color),
-        Map.entry("pattern", pattern),
-        Map.entry("penalty", penalty),
-        Map.entry("tier", tier),
-        Map.entry("tierLabel", tierLabel),
-        Map.entry("formula", formula),
-        Map.entry("breakdown", breakdown),
-        Map.entry("stylistComment", stylistComment),
-        Map.entry("aiModelSource", "WORKBOOK_RULES_JSON"),
-        Map.entry("proportionRule", prop),
-        Map.entry("patternRule", patternRule),
-        Map.entry("penaltyRules", penalties),
-        Map.entry("source", workbook.path("source").asText("ScoringTable.xlsx")),
-        Map.entry("assessmentType", "CATALOG_RULE_ESTIMATE"),
-        Map.entry(
-            "assumptions",
-            List.of(
-                "Sơ vin do người dùng khai báo, không suy ra từ ảnh.",
-                "Màu gần nhất trong bảng RGB; màu ngoài bảng được xấp xỉ, không coi là đo màu"
-                    + " chuẩn.",
-                "Chưa chấm phụ kiện, chất liệu gân, họa tiết chìm do catalog chưa có field tương"
-                    + " ứng.")),
-        Map.entry("advice", stylistComment));
+    var out = new LinkedHashMap<String, Object>();
+    out.put("total", total);
+    out.put("proportion", proportion);
+    out.put("color", color);
+    out.put("pattern", pattern);
+    out.put("penalty", penalty);
+    out.put("tier", tier);
+    out.put("tierLabel", tierLabel);
+    out.put("formula", formula);
+    out.put("breakdown", breakdown);
+    out.put("colorSwatches", colorEval.swatches());
+    out.put("recommendedColors", recommendedColors);
+    out.put("stylistComment", stylistComment);
+    out.put("aiModelSource", "WORKBOOK_RULES_JSON");
+    out.put("proportionRule", prop);
+    out.put("patternRule", patternRule);
+    out.put("penaltyRules", penalties);
+    out.put("source", workbook.path("source").asText("ScoringTable.xlsx"));
+    out.put("assessmentType", "CATALOG_RULE_ESTIMATE");
+    out.put(
+        "assumptions",
+        List.of(
+            "Sơ vin do người dùng khai báo, không suy ra từ ảnh.",
+            "Màu gần nhất trong bảng RGB; màu ngoài bảng được xấp xỉ, không coi là đo màu chuẩn.",
+            "Chưa chấm phụ kiện, chất liệu gân, họa tiết chìm do catalog chưa có field tương ứng."));
+    out.put("advice", stylistComment);
+    return out;
+  }
+
+  /**
+   * AI Stylist sau VTON: giữ nguyên 100% điểm số 40/40/20 từ rule engine và dùng tuyến Vision
+   * (gemini -> nvidia 4 model vision -> openrouter, tự fallback sang text nếu không có ảnh/Vision bận)
+   * để viết lại lời nhận xét tinh tế, chỉn chu, lời hay ý đẹp cho khách hàng.
+   */
+  @SuppressWarnings("unchecked")
+  public Map<String, Object> enhanceStylistEvaluation(
+      Map<String, Object> baseEval,
+      String firstVariantId,
+      String secondVariantId,
+      boolean tucked,
+      byte[] vtonResultImage) {
+    var result = new LinkedHashMap<String, Object>(baseEval);
+    if (llm == null || !llm.isConfigured()) {
+      return result;
+    }
+
+    try {
+      String firstDesc = describeGarmentSafe(firstVariantId);
+      String secondDesc = secondVariantId == null || secondVariantId.isBlank()
+          ? ""
+          : describeGarmentSafe(secondVariantId);
+
+      var breakdown = baseEval.get("breakdown") instanceof Map<?, ?> bm ? (Map<String, Object>) bm : Map.<String, Object>of();
+      String propNote = nestedNote(breakdown, "proportion");
+      String colNote = nestedNote(breakdown, "color");
+      String patNote = nestedNote(breakdown, "pattern");
+      String penNote = nestedNote(breakdown, "penalty");
+
+      var recColors = baseEval.get("recommendedColors") instanceof List<?> list
+          ? list.stream()
+              .filter(Map.class::isInstance)
+              .map(m -> Objects.toString(((Map<?, ?>) m).get("name"), ""))
+              .filter(s -> !s.isBlank())
+              .toList()
+          : List.<String>of();
+
+      String imageDataUrl = toVisionDataUrl(vtonResultImage);
+      boolean withImage = imageDataUrl != null;
+
+      String systemPrompt = """
+          Bạn là Stylist Thời trang cao cấp của thương hiệu YoFaSo Atelier.
+          Nhiệm vụ: Viết lại lời nhận xét thẩm mỹ cho bộ trang phục khách vừa thử đồ ảo (VTON) thành 2 đến 4 câu tiếng Việt tự nhiên, ấm áp, tinh tế và chỉn chu (tối đa khoảng 95 từ).
+          QUY TẮC BẮT BUỘC:
+          - Giữ đúng tinh thần điểm số hệ thống đã chấm (từ 85 trở lên: khen tôn dáng và gợi ý phụ kiện/giày hoàn thiện; 70-84: khen điểm sáng và gợi ý tinh chỉnh nhẹ để lên tầm xuất sắc; dưới 70: góp ý thật khéo léo, tích cực và khuyên đổi món phối hợp hơn).
+          - Dùng từ ngữ thời trang tinh tế, gần gũi (phom dáng, đường cắt, độ rủ, hiệu ứng kéo dài đôi chân, sự chuyển sắc hài hòa, điểm nhấn phụ kiện).
+          - Nếu có nhắc màu sắc gợi ý, CHỈ dùng tên màu tiếng Việt (như Trắng, Be kem, Xanh navy, Nâu đất...), TUYỆT ĐỐI KHÔNG viết mã màu HEX kiểu #FFFFFF hay #1B2A4A.
+          - TUYỆT ĐỐI KHÔNG nhắc công thức toán học (0.4*...), không nhắc mã quy tắc nội bộ (PROP_01, WORKBOOK, SMART CROSS-SELLING, catalog rule), không dùng gạch đầu dòng hay markdown, chỉ trả về 1 đoạn văn duy nhất.
+          """;
+
+      var userPrompt = new StringBuilder();
+      userPrompt.append("DỮ LIỆU SET ĐỒ KHÁCH VỪA THỬ:\n");
+      userPrompt.append("- Món chính: ").append(firstDesc).append("\n");
+      if (!secondDesc.isBlank()) {
+        userPrompt.append("- Món phối kèm: ").append(secondDesc).append("\n");
+      }
+      userPrompt.append("- Cách mặc: ").append(tucked ? "Sơ vin gọn gàng" : "Thả suông tự nhiên").append("\n");
+      userPrompt.append("- Điểm tổng: ").append(baseEval.get("total")).append("/100 (")
+          .append(baseEval.get("tierLabel")).append(")\n");
+      userPrompt.append("- Tỉ lệ vóc dáng (").append(baseEval.get("proportion")).append("/100): ").append(propNote).append("\n");
+      userPrompt.append("- Hòa hợp màu sắc (").append(baseEval.get("color")).append("/100): ").append(colNote).append("\n");
+      userPrompt.append("- Cân bằng họa tiết (").append(baseEval.get("pattern")).append("/100): ").append(patNote).append("\n");
+      if (!penNote.isBlank()) {
+        userPrompt.append("- Điểm cần lưu ý: ").append(penNote).append("\n");
+      }
+      if (!recColors.isEmpty()) {
+        userPrompt.append("- Tông màu gợi ý phối thêm (hiển thị dạng swatch bên dưới): ")
+            .append(String.join(", ", recColors)).append("\n");
+      }
+      if (withImage) {
+        userPrompt.append("- Ảnh kết quả thử đồ thật được đính kèm: hãy quan sát thêm tổng thể dáng lên người và sắc độ trang phục trong ảnh để nhận xét sinh động, sát thực tế hơn.\n");
+      }
+      userPrompt.append("\nHãy viết ngay đoạn nhận xét Stylist dành cho khách hàng:");
+
+      List<Map<String, Object>> messages = List.of(
+          Map.of("role", "system", "content", systemPrompt),
+          Map.of("role", "user", "content", userPrompt.toString()));
+
+      Optional<OpenRouterClient.CompletionResult> remote = llm.complete(messages, imageDataUrl);
+      if (remote.isPresent()) {
+        String polished = sanitizeStylistOutput(remote.get().content());
+        if (!polished.isBlank()) {
+          result.put("stylistComment", polished);
+          result.put("advice", polished);
+          result.put("aiModelSource", (withImage ? "AI_STYLIST_VISION:" : "AI_STYLIST_TEXT:") + remote.get().modelUsed());
+          result.put("stylistEnhanced", true);
+        }
+      }
+    } catch (Exception e) {
+      log.warn("AI Stylist remake skipped due to error ({}); keeping clean rule-based comment.", e.getMessage());
+    }
+    return result;
   }
 
   /** Thông tin đơn lẻ từ workbook-rules.json khi khách mới thử 1 món upper/lower chưa ghép set. */
   public Map<String, Object> singleItemPreview(String variantId) {
     var g = garment(variantId);
-    List<String> colors = Arrays.asList(Db.text(g, "MaMauSac").toUpperCase(Locale.ROOT).split(","));
+    List<String> colors = parseHexList(Db.text(g, "MaMauSac"));
     var colorEval = evaluateColors(colors);
     String pa = Db.text(g, "LoaiHoaTiet");
     String patternRule = pattern(pa, "VAI_TRON");
     var patRow = ruleRow(4, patternRule);
-    return Map.of(
-        "evaluated", false,
-        "singleItem", true,
-        "colorName", Db.text(g, "TenMau"),
-        "colorNote", colorEval.note(),
-        "patternRule", patternRule,
-        "patternNote", cleanRuleText(patRow.get(4).asText()),
-        "source", workbook.path("source").asText("ScoringTable.xlsx"));
+    var out = new LinkedHashMap<String, Object>();
+    out.put("evaluated", false);
+    out.put("singleItem", true);
+    out.put("colorName", Db.text(g, "TenMau"));
+    out.put("colorNote", colorEval.note());
+    out.put("colorSwatches", colorEval.swatches());
+    out.put("recommendedColors", suggestHarmonyColors(colors));
+    out.put("patternRule", patternRule);
+    out.put("patternNote", cleanRuleText(patRow.get(4).asText()));
+    out.put("source", workbook.path("source").asText("ScoringTable.xlsx"));
+    return out;
   }
 
   /** Làm giàu thông tin hiển thị từ workbook-rules.json cho phiên đã lưu điểm. */
   public Map<String, Object> enrichSavedSession(String tier, String propRule) {
+    return enrichSavedSession(tier, propRule, null, null);
+  }
+
+  /** Làm giàu thêm colorSwatches + recommendedColors cho phiên đã lưu điểm để UI hiện swatch chuẩn. */
+  public Map<String, Object> enrichSavedSession(
+      String tier, String propRule, String firstVariantId, String secondVariantId) {
     var out = new LinkedHashMap<String, Object>();
     if (tier != null && !tier.isBlank()) {
       var t = tierRow(tier);
@@ -176,6 +302,23 @@ public class ScoringService {
         var p = ruleRow(1, propRule);
         out.put("proportionNote", cleanRuleText(p.get(6).asText()));
       } catch (IllegalStateException ignored) {}
+    }
+    if (firstVariantId != null && !firstVariantId.isBlank()) {
+      try {
+        var colors = new ArrayList<String>();
+        var a = garment(firstVariantId);
+        colors.addAll(parseHexList(Db.text(a, "MaMauSac")));
+        if (secondVariantId != null && !secondVariantId.isBlank()) {
+          var b = garment(secondVariantId);
+          colors.addAll(parseHexList(Db.text(b, "MaMauSac")));
+        }
+        if (!colors.isEmpty()) {
+          var colorEval = evaluateColors(colors);
+          out.put("colorNote", colorEval.note());
+          out.put("colorSwatches", colorEval.swatches());
+          out.put("recommendedColors", suggestHarmonyColors(colors));
+        }
+      } catch (Exception ignored) {}
     }
     return out;
   }
@@ -221,10 +364,184 @@ public class ScoringService {
     return "PAT_07";
   }
 
-  private record ColorEval(int score, String note) {}
+  private record ColorEval(int score, String note, List<Map<String, Object>> swatches) {}
 
   private static String cleanRuleText(String text) {
     return text == null ? "" : text.replaceAll("\\s*\\n\\s*", " ").replaceAll("\\s{2,}", " ").trim();
+  }
+
+  /** Chuyển nhãn "Xanh Navy (#1B2A4A)" thành tên sạch "Xanh Navy" để khách không thấy mã HEX. */
+  public static String stripHexCodes(String text) {
+    if (text == null) return "";
+    String withoutParens = HEX_IN_PARENS.matcher(text).replaceAll("");
+    return HEX_CODE.matcher(withoutParens).replaceAll("").replaceAll("\\s{2,}", " ").trim();
+  }
+
+  private static Map<String, Object> toSwatch(String rawLabel) {
+    String cleaned = cleanRuleText(rawLabel);
+    String name = stripHexCodes(cleaned);
+    var m = HEX_CODE.matcher(cleaned);
+    String hex = m.find() ? m.group().toUpperCase(Locale.ROOT) : "#CBD5E1";
+    var map = new LinkedHashMap<String, Object>();
+    map.put("name", name.isBlank() ? hex : name);
+    map.put("hex", hex);
+    return map;
+  }
+
+  private static List<String> parseHexList(String raw) {
+    var out = new ArrayList<String>();
+    if (raw == null || raw.isBlank()) return out;
+    for (String part : raw.toUpperCase(Locale.ROOT).split(",")) {
+      String t = part.trim();
+      if (HEX_CODE.matcher(t).matches()) out.add(t);
+    }
+    return out;
+  }
+
+  /** Gợi ý tối đa 4 tông màu phối hài hòa (>= 92đ trên bánh xe màu) kèm mã hex để UI vẽ swatch tròn. */
+  public List<Map<String, Object>> suggestHarmonyColors(List<String> baseHexes) {
+    if (baseHexes == null || baseHexes.isEmpty()) return List.of();
+    var matrix = workbook.get("sheets").get(2);
+    var existingRowIndices = new HashSet<Integer>();
+    for (String c : baseHexes) {
+      existingRowIndices.add(nearestMatrixRow(matrix, c));
+    }
+
+    record ScoredSwatch(Map<String, Object> swatch, int score) {}
+    var candidates = new ArrayList<ScoredSwatch>();
+    for (int col = 1; col <= 12; col++) {
+      String colLabel = cleanRuleText(matrix.get(0).get(col).asText());
+      String colHex = hex(colLabel).toUpperCase(Locale.ROOT);
+      int colAsRow = nearestMatrixRow(matrix, colHex);
+      if (existingRowIndices.contains(colAsRow)) continue;
+
+      int sum = 0;
+      for (int rowIdx : existingRowIndices) {
+        sum += Integer.parseInt(matrix.get(rowIdx).get(col).asText());
+      }
+      int avg = Math.round((float) sum / existingRowIndices.size());
+      if (avg >= 92) {
+        var sw = toSwatch(colLabel);
+        sw.put("score", avg);
+        candidates.add(new ScoredSwatch(sw, avg));
+      }
+    }
+    candidates.sort(Comparator.comparingInt(ScoredSwatch::score).reversed());
+    return candidates.stream().limit(4).map(ScoredSwatch::swatch).toList();
+  }
+
+  private int nearestMatrixRow(JsonNode matrix, String targetHex) {
+    int bestRow = 1;
+    long bestDist = Long.MAX_VALUE;
+    for (int i = 1; i < matrix.size(); i++) {
+      long d = distance(targetHex, hex(matrix.get(i).get(0).asText()));
+      if (d < bestDist) {
+        bestDist = d;
+        bestRow = i;
+      }
+    }
+    return bestRow;
+  }
+
+  private static String buildCleanFallbackStylistNote(
+      int total,
+      String tier,
+      String tierMeaning,
+      String propNote,
+      String colNote,
+      String patNote,
+      String penaltyNote,
+      List<Map<String, Object>> recommendedColors) {
+    StringBuilder sb = new StringBuilder();
+    if (!tierMeaning.isBlank()) {
+      sb.append(tierMeaning);
+      if (!tierMeaning.endsWith(".")) sb.append(".");
+    }
+    if (!propNote.isBlank()) {
+      sb.append(" ").append(propNote);
+      if (!propNote.endsWith(".")) sb.append(".");
+    }
+    if (!penaltyNote.isBlank()) {
+      sb.append(" Lưu ý nhỏ: ").append(penaltyNote);
+      if (!penaltyNote.endsWith(".")) sb.append(".");
+    }
+    String tail = switch (tier) {
+      case "RECOMMENDED" -> " Bạn có thể tự tin diện ngay set đồ này và phối thêm giày hoặc túi trung tính để tổng thể thêm cuốn hút.";
+      case "ACCEPTABLE" -> " Tổng thể đã khá gọn gàng; bạn có thể nhấn nhẹ bằng phụ kiện hoặc thử đổi tông màu gợi ý bên dưới để nâng lên mức xuất sắc.";
+      default -> " Bạn thử kết hợp với một trong các món đối ứng hoặc tông màu gợi ý bên dưới để cân bằng lại phom dáng và sắc độ hài hòa hơn nhé.";
+    };
+    sb.append(tail);
+    return stripHexCodes(sb.toString());
+  }
+
+  static String sanitizeStylistOutput(String raw) {
+    if (raw == null) return "";
+    String cleaned = raw.trim()
+        .replaceAll("^[“\"']+|[”\"']+$", "")
+        .replaceAll("\\*\\*|__|`", "")
+        .replaceAll("\\s*\\n+\\s*", " ");
+    cleaned = stripHexCodes(cleaned);
+    if (cleaned.length() > 900) {
+      cleaned = cleaned.substring(0, 900).trim();
+    }
+    return cleaned;
+  }
+
+  private String describeGarmentSafe(String variantId) {
+    try {
+      var g = garment(variantId);
+      String name = Db.text(g, "TenSanPham");
+      String color = Db.text(g, "TenMau");
+      String fit = Db.text(g, "KieuDang");
+      String material = Db.text(g, "ChatLieu");
+      var parts = new ArrayList<String>();
+      parts.add(name.isBlank() ? variantId : name);
+      if (!color.isBlank()) parts.add("màu " + color);
+      if (!material.isBlank()) parts.add("chất liệu " + material);
+      if (!fit.isBlank()) parts.add("form " + fit.toLowerCase(Locale.ROOT).replace('_', ' '));
+      return String.join(", ", parts);
+    } catch (Exception e) {
+      return variantId;
+    }
+  }
+
+  @SuppressWarnings("unchecked")
+  private static String nestedNote(Map<String, Object> breakdown, String key) {
+    Object obj = breakdown.get(key);
+    if (obj instanceof Map<?, ?> m) {
+      return Objects.toString(((Map<String, Object>) m).get("stylistNote"), "");
+    }
+    return "";
+  }
+
+  /** Thu gọn ảnh VTON về tối đa 768px dạng JPEG base64 để gửi Vision LLM nhanh & nhẹ. */
+  static String toVisionDataUrl(byte[] rawBytes) {
+    if (rawBytes == null || rawBytes.length == 0) return null;
+    try {
+      BufferedImage src = ImageIO.read(new ByteArrayInputStream(rawBytes));
+      if (src == null) return null;
+      int w = src.getWidth(), h = src.getHeight();
+      int maxSide = 768;
+      int tw = w, th = h;
+      if (Math.max(w, h) > maxSide) {
+        double scale = (double) maxSide / Math.max(w, h);
+        tw = Math.max(1, (int) Math.round(w * scale));
+        th = Math.max(1, (int) Math.round(h * scale));
+      }
+      BufferedImage rgb = new BufferedImage(tw, th, BufferedImage.TYPE_INT_RGB);
+      Graphics2D g = rgb.createGraphics();
+      g.setColor(Color.WHITE);
+      g.fillRect(0, 0, tw, th);
+      g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+      g.drawImage(src, 0, 0, tw, th, null);
+      g.dispose();
+
+      var baos = new ByteArrayOutputStream();
+      ImageIO.write(rgb, "jpg", baos);
+      return "data:image/jpeg;base64," + Base64.getEncoder().encodeToString(baos.toByteArray());
+    } catch (Exception e) {
+      return null;
+    }
   }
 
   private JsonNode ruleRow(int sheet, String code) {
@@ -239,41 +556,52 @@ public class ScoringService {
     return workbook.get("sheets").get(0).get(1);
   }
 
-  /** Màu một món không có cặp đối chiếu được tính như cùng màu trong matrix; đọc nhãn từ JSON. */
+  /** Màu một món không có cặp đối chiếu được tính như cùng màu trong matrix; đọc nhãn từ JSON và tách Swatch. */
   private ColorEval evaluateColors(List<String> colors) {
     var unique = colors.stream().distinct().sorted().toList();
     if (unique.size() >= 3) {
       for (var row : workbook.get("sheets").get(3)) {
         if (!row.get(0).asText().startsWith("MULTI_")) continue;
         var set = new TreeSet<String>();
+        var multiSwatches = new ArrayList<Map<String, Object>>();
         for (int i = 2; i <= 5; i++) {
-          var m = java.util.regex.Pattern.compile("#[A-Fa-f0-9]{6}").matcher(row.get(i).asText());
-          if (m.find()) set.add(m.group().toUpperCase(Locale.ROOT));
+          String cell = cleanRuleText(row.get(i).asText());
+          var m = HEX_CODE.matcher(cell);
+          if (m.find()) {
+            set.add(m.group().toUpperCase(Locale.ROOT));
+            multiSwatches.add(toSwatch(cell));
+          }
         }
         if (set.equals(new TreeSet<>(unique))) {
           return new ColorEval(
               Integer.parseInt(row.get(7).asText()),
-              cleanRuleText(row.get(1).asText()) + ": " + cleanRuleText(row.get(8).asText()));
+              stripHexCodes(cleanRuleText(row.get(1).asText()) + ": " + cleanRuleText(row.get(8).asText())),
+              multiSwatches);
         }
       }
     }
     var matrix = workbook.get("sheets").get(2);
-    var groupLabels = new LinkedHashSet<String>();
+    var groupSwatches = new LinkedHashMap<String, Map<String, Object>>();
     int sum = 0, count = 0;
     for (int i = 0; i < colors.size(); i++) {
       for (int j = i + 1; j < colors.size(); j++) {
         var matched = pairMatch(matrix, colors.get(i), colors.get(j));
         sum += matched.score();
-        groupLabels.add(matched.rowLabel());
-        groupLabels.add(matched.colLabel());
+        var sRow = toSwatch(matched.rowLabel());
+        var sCol = toSwatch(matched.colLabel());
+        groupSwatches.put(sRow.get("hex").toString(), sRow);
+        groupSwatches.put(sCol.get("hex").toString(), sCol);
         count++;
       }
     }
     if (count == 0) {
       var matched = pairMatch(matrix, colors.getFirst(), colors.getFirst());
-      return new ColorEval(matched.score(), matched.rowLabel());
+      var sw = toSwatch(matched.rowLabel());
+      return new ColorEval(matched.score(), sw.get("name").toString(), List.of(sw));
     }
-    return new ColorEval(Math.round((float) sum / count), String.join(" + ", groupLabels));
+    var swatches = new ArrayList<>(groupSwatches.values());
+    String note = String.join(" + ", swatches.stream().map(s -> s.get("name").toString()).toList());
+    return new ColorEval(Math.round((float) sum / count), note, swatches);
   }
 
   private record PairMatch(int score, String rowLabel, String colLabel) {}
@@ -304,7 +632,7 @@ public class ScoringService {
 
   /** Lấy HEX trong nhãn Excel đã đối chiếu. */
   private static String hex(String label) {
-    var m = java.util.regex.Pattern.compile("#[A-Fa-f0-9]{6}").matcher(label);
+    var m = HEX_CODE.matcher(label);
     if (!m.find()) throw new IllegalStateException("Missing HEX");
     return m.group();
   }
@@ -369,7 +697,7 @@ public class ScoringService {
     var result = new ArrayList<Map<String, Object>>();
     for (var row :
         db.rows(
-            "SELECT b.MaBienThe,b.TenMau,COALESCE(b.GiaKhuyenMai,b.GiaNiemYet) AS price,p.MaSanPham,p.TenSanPham,"
+            "SELECT b.MaBienThe,b.TenMau,b.MaMauSac,COALESCE(b.GiaKhuyenMai,b.GiaNiemYet) AS price,p.MaSanPham,p.TenSanPham,"
                 + " (SELECT MaHinhAnh FROM HinhAnhSanPham WHERE MaSanPham=p.MaSanPham ORDER BY LaAnhDaiDien DESC,ThuTuHienThi,MaHinhAnh LIMIT 1) AS MaHinhAnh"
                 + " FROM BienTheSanPham b JOIN SanPham p ON p.MaSanPham=b.MaSanPham"
                 + " WHERE b.SoLuongTonKho>0 AND b.TrangThai='DANG_BAN' AND p.TrangThaiSanPham='DANG_KINH_DOANH'"
@@ -381,12 +709,14 @@ public class ScoringService {
         String imageId = Db.text(row, "MaHinhAnh");
         String imageUrl = imageId.isEmpty() ? null : "/api/v1/catalog/images/" + imageId + "/content?kind=original";
         String reason = Db.text(score, "stylistComment");
+        if (reason.length() > 250) reason = reason.substring(0, 247).trim() + "...";
         var map = new LinkedHashMap<String, Object>();
         map.put("variantId", row.get("MaBienThe"));
         map.put("productId", row.get("MaSanPham"));
         map.put("name", row.get("TenSanPham"));
         map.put("productName", row.get("TenSanPham"));
         map.put("colorName", row.get("TenMau"));
+        map.put("colorHex", row.get("MaMauSac"));
         map.put("price", row.get("price"));
         map.put("imageUrl", imageUrl);
         map.put("projectedScore", proj);

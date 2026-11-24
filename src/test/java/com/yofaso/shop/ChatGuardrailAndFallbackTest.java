@@ -1,12 +1,17 @@
 package com.yofaso.shop;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 import com.sun.net.httpserver.HttpServer;
+import com.yofaso.shop.ai.MediaService;
 import com.yofaso.shop.chat.ChatService;
 import com.yofaso.shop.chat.OpenRouterClient;
+import com.yofaso.shop.common.Db;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -267,6 +272,107 @@ class ChatGuardrailAndFallbackTest {
       assertEquals("Size L vừa đẹp cho 65kg ạ!", r.get().content());
       assertFalse(gemmaHadSystemInstruction.get(), "Gemma must fold system prompt into user content");
       assertEquals(0, groqTouched.get(), "Groq must not be called when Gemini succeeds");
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  @Test
+  void testCustomerShopMessageMarksPriorShopMessagesReadAndStartsUnread() {
+    var db = mock(Db.class);
+    var media = mock(MediaService.class);
+    var openRouter = mock(OpenRouterClient.class);
+    var mapper = JsonMapper.builder().build();
+    var service = new ChatService(
+        db, media, openRouter, mapper,
+        "0795605214", "0795605214", "test@yofaso.vn", "08:00-22:00", "Showroom", "Da Nang");
+
+    var savedRow = new LinkedHashMap<String, Object>();
+    savedRow.put("MaTinNhan", "TN00000099");
+    savedRow.put("MaNguoiDung", "ND00000005");
+    savedRow.put("MaPhienChat", "shop-ND00000005");
+    savedRow.put("KenhTroChuyen", "CHU_SHOP");
+    savedRow.put("VaiTroNguoiGui", "KHACH_HANG");
+    savedRow.put("NoiDung", "Shop kiểm tra đơn giúp mình");
+    savedRow.put("DaDoc", 0);
+    savedRow.put("ThoiGianGui", "2026-11-25T04:00:00");
+    when(db.one(contains("FROM TinNhanTrucTuyen"), anyString())).thenReturn(savedRow);
+
+    var res = service.sendCustomerMessage(
+        "ND00000005", "CHU_SHOP", null, "Shop kiểm tra đơn giúp mình", null, null, null, "127.0.0.1");
+
+    verify(db).exec(
+        contains("SET DaDoc = 1"),
+        eq("ND00000005"));
+    verify(db).exec(
+        contains("INSERT INTO TinNhanTrucTuyen"),
+        anyString(), eq("ND00000005"), eq("shop-ND00000005"),
+        eq("Shop kiểm tra đơn giúp mình"), isNull(), isNull());
+
+    @SuppressWarnings("unchecked")
+    var msg = (Map<String, Object>) res.get("userMessage");
+    assertEquals(false, msg.get("read"));
+  }
+
+  @Test
+  void testVisionRouteUsesGeminiThenNvidiaFourVisionModelsSkippingTextOnly() throws Exception {
+    var mapper = JsonMapper.builder().build();
+    var groqCalls = new AtomicInteger(0);
+    var nvidiaTried = new CopyOnWriteArrayList<String>();
+    var nvidiaHadImageUrl = new AtomicBoolean(false);
+
+    var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    server.createContext("/groq/v1/chat/completions", exchange -> {
+      groqCalls.incrementAndGet();
+      exchange.sendResponseHeaders(200, 0);
+      exchange.close();
+    });
+    server.createContext("/gemini/models/", exchange -> {
+      byte[] err = "{\"error\":\"quota exceeded\"}".getBytes(StandardCharsets.UTF_8);
+      exchange.sendResponseHeaders(429, err.length);
+      exchange.getResponseBody().write(err);
+      exchange.close();
+    });
+    server.createContext("/nvidia/v1/chat/completions", exchange -> {
+      String rawBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+      @SuppressWarnings("unchecked")
+      Map<String, Object> req = mapper.readValue(rawBody, Map.class);
+      String model = String.valueOf(req.get("model"));
+      nvidiaTried.add(model);
+      nvidiaHadImageUrl.set(rawBody.contains("image_url"));
+      String resp = "{\"choices\":[{\"message\":{\"content\":\"Set đồ tôn dáng và sắc độ hài hòa rất thanh lịch!\"}}]}";
+      byte[] bytes = resp.getBytes(StandardCharsets.UTF_8);
+      exchange.getResponseHeaders().set("Content-Type", "application/json");
+      exchange.sendResponseHeaders(200, bytes.length);
+      exchange.getResponseBody().write(bytes);
+      exchange.close();
+    });
+    server.start();
+    try {
+      String host = "http://127.0.0.1:" + server.getAddress().getPort();
+      // Truyền base URL kết thúc bằng /v1 để kiểm chứng tự chuẩn hóa /chat/completions
+      var client = new OpenRouterClient(
+          "groq,gemini,nvidia,openrouter",
+          "gemini,nvidia,openrouter",
+          "gsk_test", host + "/groq/v1", "openai/gpt-oss-120b", 5,
+          "AIza_test", host + "/gemini/models", "gemini-3.5-flash-lite", 2,
+          "nvapi-test", host + "/nvidia/v1",
+          "nvidia/nemotron-3.5-lightning-30b-a3b,z-ai/glm-5.3-flash,minimaxai/minimax-m3.1-flash", 40,
+          "", host + "/openrouter/v1", "", 2,
+          0.2, 500, 10, "http://localhost:3000", "YoFaSo Shop", mapper);
+
+      assertEquals(List.of("groq", "gemini", "nvidia"), client.configuredProviders());
+      assertEquals(List.of("gemini", "nvidia"), client.configuredVisionProviders());
+
+      var r = client.complete(
+          List.of(Map.of("role", "user", "content", "Nhận xét set đồ trong ảnh giúp mình")),
+          "data:image/jpeg;base64,/9j/4AAQSkZJRg==");
+
+      assertTrue(r.isPresent());
+      assertEquals("nvidia/z-ai/glm-5.3-flash", r.get().modelUsed());
+      assertEquals(0, groqCalls.get(), "Groq text-only must be skipped on Vision route");
+      assertEquals(List.of("z-ai/glm-5.3-flash"), nvidiaTried, "Must skip nemotron-3.5-lightning text-only when image present");
+      assertTrue(nvidiaHadImageUrl.get(), "NVIDIA Vision request must include image_url");
     } finally {
       server.stop(0);
     }

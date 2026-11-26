@@ -45,6 +45,23 @@ public class InventoryAuditController {
     var draft = RuntimeState.row("id", id, "reason", body.reason(), "author", actor.getName(),
         "createdAt", Instant.now().toString(), "status", "PENDING", "lines", new ArrayList<>(lines.values()));
     runtime.put("inventoryaudits", id, draft);
+    try {
+      var admins =
+          db.rows(
+              "SELECT DISTINCT u.MaNguoiDung AS id FROM NguoiDung u"
+                  + " JOIN NguoiDung_VaiTro nv ON nv.MaNguoiDung=u.MaNguoiDung"
+                  + " JOIN VaiTro v ON v.MaVaiTro=nv.MaVaiTro"
+                  + " WHERE v.TenVaiTro='ROLE_SHOP_ADMIN' AND u.TrangThaiHoatDong='HOAT_DONG'");
+      for (var admin : admins) {
+        db.exec(
+            "INSERT INTO ThongBao(MaThongBao,MaNguoiDung,TieuDe,NoiDung,LoaiThongBao,LienKetDieuHuong)"
+                + " VALUES(?,?,?,?,'CANH_BAO_KHO','/admin')",
+            Db.id("TB"),
+            Db.text(admin, "id"),
+            "Phiếu kiểm kê kho mới #" + id,
+            "Nhân viên kho gửi phiếu kiểm kê (" + lines.size() + " SKU lệch): " + body.reason());
+      }
+    } catch (Exception ignored) {}
     return draft;
   }
 

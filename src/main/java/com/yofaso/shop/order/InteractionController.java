@@ -1,14 +1,22 @@
 package com.yofaso.shop.order;
 
+import com.yofaso.shop.ai.MediaService;
 import com.yofaso.shop.common.*;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
+import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
-/** Đánh giá verified buyer và thông báo riêng của người dùng. */
+/** Đánh giá verified buyer (kèm ảnh R2 private kiểm duyệt) và thông báo riêng của người dùng. */
 @RestController
 @RequestMapping("/api/v1")
 public class InteractionController {
@@ -22,105 +30,248 @@ public class InteractionController {
       @Size(max = 3000) String reply) {}
 
   private final Db db;
+  private final MediaService media;
 
-  /** Nhận DB để kiểm tra giao dịch mua trước khi nhận đánh giá. */
-  public InteractionController(Db db) {
+  /** Nhận DB và MediaService để kiểm tra giao dịch mua và lưu/đọc ảnh đánh giá trên R2 private. */
+  public InteractionController(Db db, MediaService media) {
     this.db = db;
+    this.media = media;
   }
 
-  /** Chỉ hiển thị đánh giá đã duyệt. */
+  /** Hiển thị đánh giá đã duyệt cho mọi khách; bài CHO_DUYET chỉ hiện riêng cho chính chủ đăng bài. */
   @GetMapping("/catalog/products/{id}/reviews")
   public List<Map<String, Object>> reviews(
+      Authentication auth,
       @PathVariable String id,
       @RequestParam(defaultValue = "0") int page,
       @RequestParam(defaultValue = "20") int size) {
+    String currentUser = (auth != null && auth.getName() != null && !auth.getName().isBlank())
+        ? auth.getName() : null;
     var rows = db.rows(
-        "SELECT d.MaDanhGia AS reviewId, d.SoSao AS stars, d.NoiDungBinhLuan AS comment, d.PhanHoiTuShop AS shopReply, "
-            + "d.NgayDanhGia AS createdAt, d.HinhAnhThucTe AS photoUrl, u.HoVaTen AS userName, u.AnhDaiDien AS userAvatar, "
+        "SELECT d.MaDanhGia AS reviewId, d.MaNguoiDung AS authorId, d.SoSao AS stars, "
+            + "d.NoiDungBinhLuan AS comment, d.PhanHoiTuShop AS shopReply, d.TrangThaiDuyet AS status, "
+            + "d.NgayDanhGia AS createdAt, d.HinhAnhThucTe AS photoKey, "
+            + "u.HoVaTen AS userName, u.AnhDaiDien AS userAvatarKey, "
             + "b.KichCo AS size, b.TenMau AS colorName, b.MaQuanLyHangHoa AS sku "
             + "FROM DanhGiaSanPham d "
             + "JOIN NguoiDung u ON u.MaNguoiDung = d.MaNguoiDung "
             + "LEFT JOIN ChiTietDonHang c ON c.MaChiTietDonHang = d.MaChiTietDonHang "
             + "LEFT JOIN BienTheSanPham b ON b.MaBienThe = c.MaBienThe "
-            + "WHERE d.MaSanPham = ? AND d.TrangThaiDuyet = 'DA_HIEN_THI' "
-            + "ORDER BY d.NgayDanhGia DESC LIMIT ? OFFSET ?",
+            + "WHERE d.MaSanPham = ? "
+            + "  AND (d.TrangThaiDuyet = 'DA_HIEN_THI' "
+            + "       OR (? IS NOT NULL AND d.MaNguoiDung = ? AND d.TrangThaiDuyet = 'CHO_DUYET')) "
+            + "ORDER BY (d.TrangThaiDuyet = 'CHO_DUYET') DESC, d.NgayDanhGia DESC LIMIT ? OFFSET ?",
         id,
+        currentUser,
+        currentUser,
         size,
         Db.offset(page, size));
     for (var r : rows) {
-      if (r.get("userAvatar") != null) {
-        String av = r.get("userAvatar").toString();
-        if (!av.startsWith("http") && !av.startsWith("/")) {
-          r.put("userAvatar", "/api/v1/content?key=" + av);
-        }
-      }
+      String reviewId = Db.text(r, "reviewId");
+      String authorId = Db.text(r, "authorId");
+      String photoKey = Db.text(r, "photoKey");
+      String avKey = Db.text(r, "userAvatarKey");
+      r.put("isOwn", currentUser != null && currentUser.equals(authorId));
+      r.put("photoUrl", photoKey.isBlank() ? null : "/api/v1/reviews/" + reviewId + "/image");
+      r.put("userAvatar", avKey.isBlank() ? null : "/api/v1/users/" + authorId + "/avatar");
+      r.remove("authorId");
+      r.remove("photoKey");
+      r.remove("userAvatarKey");
     }
     return rows;
   }
 
-  /** Mỗi dòng đơn đã giao chỉ được đánh giá một lần nhờ unique constraint. */
-  @PostMapping("/reviews")
-  @ResponseStatus(org.springframework.http.HttpStatus.CREATED)
-  public Map<String, Object> review(Authentication a, @Valid @RequestBody Review b) {
-    var line =
-        db.one(
-            "SELECT b.MaSanPham FROM ChiTietDonHang c JOIN DonHang d ON d.MaDonHang=c.MaDonHang"
-                + " JOIN BienTheSanPham b ON b.MaBienThe=c.MaBienThe WHERE c.MaChiTietDonHang=? AND"
-                + " d.MaNguoiDung=? AND d.TrangThaiDonHang='HOAN_TAT'",
-            b.orderLineId(),
-            a.getName());
-    String id = Db.id("DG");
-    db.exec(
-        "INSERT INTO"
-            + " DanhGiaSanPham(MaDanhGia,MaSanPham,MaNguoiDung,MaChiTietDonHang,SoSao,NoiDungBinhLuan,TrangThaiDuyet)"
-            + " VALUES(?,?,?,?,?,?,'CHO_DUYET')",
-        id,
-        line.get("MaSanPham"),
-        a.getName(),
-        b.orderLineId(),
-        b.stars(),
-        b.comment());
-    return Map.of("reviewId", id, "status", "CHO_DUYET");
+  /** Gửi đánh giá JSON (không kèm ảnh). */
+  @PostMapping(value = "/reviews", consumes = MediaType.APPLICATION_JSON_VALUE)
+  @ResponseStatus(HttpStatus.CREATED)
+  public Map<String, Object> review(Authentication a, @Valid @RequestBody Review b) throws IOException {
+    return createReview(a.getName(), b.orderLineId(), b.stars(), b.comment(), null);
   }
 
-  /** Chủ shop đọc danh sách đánh giá từ khách hàng kèm tên sản phẩm và tên người dùng. */
+  /** Gửi đánh giá multipart kèm tùy chọn 1 ảnh thực tế lưu vào R2 private bucket. */
+  @PostMapping(value = "/reviews", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  @ResponseStatus(HttpStatus.CREATED)
+  public Map<String, Object> reviewMultipart(
+      Authentication a,
+      @RequestParam("orderLineId") String orderLineId,
+      @RequestParam("stars") int stars,
+      @RequestParam("comment") String comment,
+      @RequestParam(value = "file", required = false) MultipartFile file)
+      throws IOException {
+    return createReview(a.getName(), orderLineId, stars, comment, file);
+  }
+
+  private Map<String, Object> createReview(
+      String userId, String orderLineId, int stars, String comment, MultipartFile file)
+      throws IOException {
+    String cleanLineId = orderLineId == null ? "" : orderLineId.trim();
+    String cleanComment = comment == null ? "" : comment.trim();
+    Problem.require(!cleanLineId.isBlank() && cleanLineId.length() <= 20,
+        422, "ORDER_LINE_INVALID", "Mã dòng đơn hàng không hợp lệ.");
+    Problem.require(stars >= 1 && stars <= 5,
+        422, "STARS_INVALID", "Số sao đánh giá phải từ 1 đến 5.");
+    Problem.require(!cleanComment.isBlank() && cleanComment.length() <= 3000,
+        422, "COMMENT_INVALID", "Vui lòng nhập nhận xét (tối đa 3000 ký tự).");
+
+    var line =
+        db.one(
+            "SELECT b.MaSanPham, p.TenSanPham FROM ChiTietDonHang c "
+                + "JOIN DonHang d ON d.MaDonHang=c.MaDonHang "
+                + "JOIN BienTheSanPham b ON b.MaBienThe=c.MaBienThe "
+                + "JOIN SanPham p ON p.MaSanPham=b.MaSanPham "
+                + "WHERE c.MaChiTietDonHang=? AND d.MaNguoiDung=? AND d.TrangThaiDonHang='HOAN_TAT'",
+            cleanLineId,
+            userId);
+    long already = db.count("SELECT COUNT(*) FROM DanhGiaSanPham WHERE MaChiTietDonHang=?", cleanLineId);
+    Problem.require(already == 0, 409, "REVIEW_ALREADY_EXISTS", "Bạn đã đánh giá sản phẩm này trong đơn hàng rồi.");
+
+    String id = Db.id("DG");
+    String productId = Db.text(line, "MaSanPham");
+    String productName = Db.text(line, "TenSanPham");
+    String photoKey = null;
+    if (file != null && !file.isEmpty()) {
+      photoKey = media.saveReviewImage(productId, id, file.getBytes());
+    }
+    try {
+      db.exec(
+          "INSERT INTO DanhGiaSanPham("
+              + "MaDanhGia,MaSanPham,MaNguoiDung,MaChiTietDonHang,SoSao,NoiDungBinhLuan,HinhAnhThucTe,TrangThaiDuyet) "
+              + "VALUES(?,?,?,?,?,?,?,'CHO_DUYET')",
+          id,
+          productId,
+          userId,
+          cleanLineId,
+          stars,
+          cleanComment,
+          photoKey);
+    } catch (RuntimeException e) {
+      if (photoKey != null) media.deleteReviewImage(photoKey);
+      throw e;
+    }
+
+    notifyAdmins(
+        "Đánh giá mới chờ kiểm duyệt (" + stars + "★)",
+        "Khách hàng vừa gửi đánh giá cho \"" + productName + "\" (" + id + "). Vui lòng kiểm duyệt để hiển thị.",
+        "/admin/dashboard");
+
+    var resp = new LinkedHashMap<String, Object>();
+    resp.put("reviewId", id);
+    resp.put("status", "CHO_DUYET");
+    resp.put("photoUrl", photoKey == null ? null : "/api/v1/reviews/" + id + "/image");
+    return resp;
+  }
+
+  /** Endpoint gác cổng duy nhất cho ảnh review: DA_HIEN_THI công khai; CHO_DUYET/DA_AN chỉ chính chủ & Admin. */
+  @GetMapping("/reviews/{reviewId}/image")
+  public ResponseEntity<byte[]> reviewImage(Authentication auth, @PathVariable String reviewId) {
+    var row = db.one(
+        "SELECT MaNguoiDung, HinhAnhThucTe, TrangThaiDuyet FROM DanhGiaSanPham WHERE MaDanhGia=?",
+        reviewId);
+    String photoKey = Db.text(row, "HinhAnhThucTe");
+    Problem.require(!photoKey.isBlank(), 404, "NOT_FOUND", "Đánh giá không có ảnh đính kèm.");
+    String status = Db.text(row, "TrangThaiDuyet");
+    String owner = Db.text(row, "MaNguoiDung");
+
+    boolean isPublic = "DA_HIEN_THI".equals(status);
+    if (!isPublic) {
+      boolean isAdmin = auth != null
+          && auth.getAuthorities().stream().anyMatch(g -> "ROLE_SHOP_ADMIN".equals(g.getAuthority()));
+      boolean isOwner = auth != null && owner.equals(auth.getName());
+      Problem.require(isAdmin || isOwner, 404, "NOT_FOUND", "Không tìm thấy ảnh đánh giá.");
+    }
+
+    byte[] bytes = media.readReviewImage(photoKey);
+    CacheControl cc = isPublic
+        ? CacheControl.maxAge(1, TimeUnit.HOURS).cachePublic()
+        : CacheControl.noStore();
+    return ResponseEntity.ok()
+        .contentType(MediaType.IMAGE_PNG)
+        .contentLength(bytes.length)
+        .cacheControl(cc)
+        .header("X-Content-Type-Options", "nosniff")
+        .body(bytes);
+  }
+
+  /** Chủ shop đọc danh sách đánh giá (ưu tiên CHO_DUYET lên đầu) kèm URL proxy ảnh. */
   @GetMapping("/admin/reviews")
   @PreAuthorize("hasRole('SHOP_ADMIN')")
   public List<Map<String, Object>> pending(
       @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "50") int size) {
-    return db.rows(
+    var rows = db.rows(
         "SELECT d.MaDanhGia AS reviewId, d.MaSanPham AS productId, s.TenSanPham AS productName, "
             + "COALESCE(u.HoVaTen, 'Khách hàng') AS customerName, d.MaChiTietDonHang AS lineId, "
             + "ct.MaDonHang AS orderId, "
             + "d.SoSao AS stars, d.NoiDungBinhLuan AS comment, d.PhanHoiTuShop AS reply, "
-            + "d.TrangThaiDuyet AS status, d.HinhAnhThucTe AS photoUrl, d.NgayDanhGia AS createdAt, "
+            + "d.TrangThaiDuyet AS status, d.HinhAnhThucTe AS photoKey, d.NgayDanhGia AS createdAt, "
             + "CASE WHEN d.MaChiTietDonHang IS NOT NULL THEN TRUE ELSE FALSE END AS verified "
             + "FROM DanhGiaSanPham d "
             + "LEFT JOIN SanPham s ON s.MaSanPham = d.MaSanPham "
             + "LEFT JOIN NguoiDung u ON u.MaNguoiDung = d.MaNguoiDung "
             + "LEFT JOIN ChiTietDonHang ct ON ct.MaChiTietDonHang = d.MaChiTietDonHang "
-            + "ORDER BY d.NgayDanhGia DESC LIMIT ? OFFSET ?",
+            + "ORDER BY CASE WHEN d.TrangThaiDuyet='CHO_DUYET' THEN 0 ELSE 1 END, d.NgayDanhGia DESC LIMIT ? OFFSET ?",
         size,
         Db.offset(page, size));
+    for (var r : rows) {
+      String reviewId = Db.text(r, "reviewId");
+      String photoKey = Db.text(r, "photoKey");
+      r.put("photoUrl", photoKey.isBlank() ? null : "/api/v1/reviews/" + reviewId + "/image");
+      r.remove("photoKey");
+    }
+    return rows;
   }
 
-  /** Duyệt/ẩn và phản hồi từ shop. */
+  /** Duyệt/ẩn và phản hồi từ shop; tự động gửi thông báo về Mobile cho khách hàng. */
   @PatchMapping("/admin/reviews/{id}")
   @PreAuthorize("hasRole('SHOP_ADMIN')")
   public Map<String, Object> moderate(
       @PathVariable String id, @Valid @RequestBody Moderation b, Authentication a) {
-    Problem.require(
+    var existing = db.one(
+        "SELECT d.MaNguoiDung, d.MaSanPham, d.TrangThaiDuyet, p.TenSanPham "
+            + "FROM DanhGiaSanPham d LEFT JOIN SanPham p ON p.MaSanPham = d.MaSanPham "
+            + "WHERE d.MaDanhGia=?",
+        id);
+    String replyText = (b.reply() == null || b.reply().isBlank()) ? null : b.reply().trim();
+    db.exec(
+        "UPDATE DanhGiaSanPham SET TrangThaiDuyet=?,PhanHoiTuShop=? WHERE MaDanhGia=?",
+        b.status(),
+        replyText,
+        id);
+    db.audit(a.getName(), "REVIEW_MODERATE", id + ":" + b.status());
+
+    String owner = Db.text(existing, "MaNguoiDung");
+    String productId = Db.text(existing, "MaSanPham");
+    String productName = Db.text(existing, "TenSanPham");
+    if (!owner.isBlank() && ("DA_HIEN_THI".equals(b.status()) || replyText != null)) {
+      String title = replyText != null
+          ? "YoFaSo Shop đã phản hồi đánh giá của bạn"
+          : "Đánh giá của bạn đã được duyệt hiển thị";
+      String body = replyText != null
+          ? "Shop vừa phản hồi đánh giá cho \"" + productName + "\": " + replyText
+          : "Cảm ơn bạn đã đánh giá \"" + productName + "\". Bài viết hiện đã hiển thị công khai.";
+      try {
         db.exec(
-                "UPDATE DanhGiaSanPham SET TrangThaiDuyet=?,PhanHoiTuShop=? WHERE MaDanhGia=?",
-                b.status(),
-                b.reply(),
-                id)
-            == 1,
-        404,
-        "NOT_FOUND",
-        "Không có đánh giá.");
-    db.audit(a.getName(), "REVIEW_MODERATE", id);
-    return Map.of("updated", true);
+            "INSERT INTO ThongBao(MaThongBao,MaNguoiDung,TieuDe,NoiDung,LoaiThongBao,LienKetDieuHuong) "
+                + "VALUES(?,?,?,?,'HE_THONG',?)",
+            Db.id("TB"), owner, title, body, "/product/" + productId);
+      } catch (Exception ignored) {}
+    }
+    return Map.of("updated", true, "status", b.status());
+  }
+
+  private void notifyAdmins(String title, String body, String link) {
+    try {
+      var admins = db.rows(
+          "SELECT DISTINCT r.MaNguoiDung FROM NguoiDung_VaiTro r "
+              + "JOIN VaiTro v ON v.MaVaiTro = r.MaVaiTro "
+              + "JOIN NguoiDung u ON u.MaNguoiDung = r.MaNguoiDung "
+              + "WHERE v.TenVaiTro = 'ROLE_SHOP_ADMIN' AND u.TrangThaiHoatDong = 'HOAT_DONG'");
+      for (var adm : admins) {
+        db.exec(
+            "INSERT INTO ThongBao(MaThongBao,MaNguoiDung,TieuDe,NoiDung,LoaiThongBao,LienKetDieuHuong) "
+                + "VALUES(?,?,?,?,'HE_THONG',?)",
+            Db.id("TB"), Db.text(adm, "MaNguoiDung"), title, body, link);
+      }
+    } catch (Exception ignored) {}
   }
 
   /** Thông báo của người đăng nhập, hỗ trợ lọc chưa đọc. */
@@ -147,5 +298,12 @@ public class InteractionController {
     db.one("SELECT MaThongBao FROM ThongBao WHERE MaThongBao=? AND MaNguoiDung=?", id, a.getName());
     db.exec("UPDATE ThongBao SET DaDoc=1 WHERE MaThongBao=?", id);
     return Map.of("read", true);
+  }
+
+  /** Đánh dấu toàn bộ thông báo của tài khoản hiện tại là đã đọc. */
+  @PostMapping("/notifications/read-all")
+  public Map<String, Object> readAll(Authentication a) {
+    int updated = db.exec("UPDATE ThongBao SET DaDoc=1 WHERE MaNguoiDung=? AND DaDoc=0", a.getName());
+    return Map.of("updated", updated);
   }
 }

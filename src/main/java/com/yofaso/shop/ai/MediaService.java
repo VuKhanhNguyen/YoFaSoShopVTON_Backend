@@ -31,6 +31,7 @@ public class MediaService {
   private final Path root;
   private final Path cacheDir;
   private final Path chatDir;
+  private final Path reviewDir;
   private final Db db;
   private final AiClient ai;
   private final R2Storage r2;
@@ -47,6 +48,8 @@ public class MediaService {
     Files.createDirectories(this.cacheDir);
     this.chatDir = this.root.resolve("chat-cache");
     Files.createDirectories(this.chatDir);
+    this.reviewDir = this.root.resolve("review-cache");
+    Files.createDirectories(this.reviewDir);
     this.db = db;
     this.ai = ai;
     this.r2 = r2;
@@ -632,29 +635,104 @@ public class MediaService {
     } catch (IOException ignored) {}
   }
 
-  /** Chuẩn hóa ảnh chat sang PNG sạch EXIF, lưu R2 private prefix chat/{owner}/ và cache local. */
-  public String saveChatImage(String ownerFolder, byte[] rawBytes) {
-    Problem.require(rawBytes != null && rawBytes.length > 0 && rawBytes.length <= 10 * 1024 * 1024,
-        413, "FILE_TOO_LARGE", "Ảnh chat không được rỗng và tối đa 10 MB.");
-    String safeOwner = (ownerFolder == null ? "guest" : ownerFolder.replaceAll("[^A-Za-z0-9_-]", ""));
-    if (safeOwner.isBlank()) safeOwner = "guest";
-    if (safeOwner.length() > 40) safeOwner = safeOwner.substring(0, 40);
+  /** Đọc ảnh đại diện: local cache -> R2 private bucket -> fallback R2 public catalog (ảnh cũ). */
+  public byte[] readAvatarBytes(String key) {
+    Problem.require(key != null && key.length() <= 500
+        && key.startsWith("avatars/")
+        && key.matches("[A-Za-z0-9_./-]+")
+        && Arrays.stream(key.split("/", -1)).noneMatch(part -> part.isEmpty() || part.equals(".") || part.equals("..")),
+        422, "AVATAR_KEY_INVALID", "Đường dẫn ảnh đại diện không hợp lệ.");
+    Path cacheFile = cacheDir.resolve(Idempotency.hash(key) + ".png");
+    if (Files.isRegularFile(cacheFile)) {
+      try {
+        return Files.readAllBytes(cacheFile);
+      } catch (IOException ignored) {}
+    }
+    if (r2 != null && r2.isConfigured()) {
+      byte[] data = r2.getWithCatalogFallback(key);
+      try {
+        Files.write(cacheFile, data);
+      } catch (IOException ignored) {}
+      return data;
+    }
+    if (!catalogBase.isBlank()) {
+      return catalogBytes(key);
+    }
+    throw new Problem(404, "NOT_FOUND", "Không tìm thấy ảnh đại diện.");
+  }
 
-    byte[] pngBytes;
+  /** Chuẩn hóa ảnh đánh giá (PNG sạch EXIF, max 1200px), lưu review-cache/ + R2 private prefix reviews/{productId}/. */
+  public String saveReviewImage(String productId, String reviewId, byte[] rawBytes) {
+    Problem.require(rawBytes != null && rawBytes.length > 0 && rawBytes.length <= 10 * 1024 * 1024,
+        413, "FILE_TOO_LARGE", "Ảnh đánh giá không được rỗng và tối đa 10 MB.");
+    String safeProduct = (productId == null ? "SP" : productId.replaceAll("[^A-Za-z0-9_-]", ""));
+    String safeReview = (reviewId == null ? "DG" : reviewId.replaceAll("[^A-Za-z0-9_-]", ""));
+    if (safeProduct.isBlank()) safeProduct = "SP";
+    if (safeReview.isBlank()) safeReview = "DG";
+
+    byte[] pngBytes = normalizeUploadedImage(rawBytes, 1200, "Ảnh đánh giá");
+    String uuid = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+    String key = "reviews/" + safeProduct + "/" + safeReview + "--" + uuid + ".png";
+    try {
+      Files.write(reviewDir.resolve(Idempotency.hash(key) + ".png"), pngBytes);
+    } catch (IOException e) {
+      throw new Problem(503, "STORAGE_UNAVAILABLE", "Chưa lưu được bản sao ảnh đánh giá trên đĩa.");
+    }
+    if (r2 != null && r2.isConfigured()) {
+      try {
+        r2.upload(key, pngBytes);
+      } catch (Exception e) {
+        log.warn("Không upload được ảnh đánh giá {} lên R2 (giữ bản local): {}", key, e.getMessage());
+      }
+    }
+    return key;
+  }
+
+  /** Đọc ảnh đánh giá từ review-cache/ trước, fallback tải từ R2 private bucket. */
+  public byte[] readReviewImage(String key) {
+    Problem.require(key != null && key.matches("reviews/[A-Za-z0-9_\\-]+/[A-Za-z0-9_\\-]+[.]png") && !key.contains(".."),
+        422, "REVIEW_IMAGE_KEY_INVALID", "Đường dẫn ảnh đánh giá không hợp lệ.");
+    Path cached = reviewDir.resolve(Idempotency.hash(key) + ".png");
+    if (Files.isRegularFile(cached)) {
+      try {
+        return Files.readAllBytes(cached);
+      } catch (IOException ignored) {}
+    }
+    if (r2 != null && r2.isConfigured()) {
+      byte[] bytes = r2.get(key);
+      try {
+        Files.write(cached, bytes);
+      } catch (IOException ignored) {}
+      return bytes;
+    }
+    throw new Problem(404, "NOT_FOUND", "Không tìm thấy ảnh đánh giá.");
+  }
+
+  /** Xóa bản sao local + object R2 khi rollback tạo đánh giá thất bại. */
+  public void deleteReviewImage(String key) {
+    if (key == null || key.isBlank()) return;
+    try {
+      Files.deleteIfExists(reviewDir.resolve(Idempotency.hash(key) + ".png"));
+    } catch (IOException ignored) {}
+    if (r2 != null && r2.isConfigured()) {
+      r2.delete(key);
+    }
+  }
+
+  private byte[] normalizeUploadedImage(byte[] rawBytes, int maxDim, String label) {
     try (var stream = ImageIO.createImageInputStream(new ByteArrayInputStream(rawBytes))) {
       var readers = ImageIO.getImageReaders(stream);
-      Problem.require(readers.hasNext(), 415, "IMAGE_INVALID", "Chỉ nhận ảnh PNG hoặc JPEG thực.");
+      Problem.require(readers.hasNext(), 415, "IMAGE_INVALID", label + " chỉ nhận PNG hoặc JPEG thực.");
       var reader = readers.next();
       try {
         String format = reader.getFormatName();
         Problem.require(format.equalsIgnoreCase("png") || format.equalsIgnoreCase("jpeg"),
-            415, "IMAGE_INVALID", "Chỉ hỗ trợ ảnh PNG hoặc JPEG.");
+            415, "IMAGE_INVALID", label + " chỉ hỗ trợ PNG hoặc JPEG.");
         reader.setInput(stream, true, true);
         int w = reader.getWidth(0), h = reader.getHeight(0);
         Problem.require(w >= 32 && h >= 32 && (long) w * h <= 25000000,
             422, "IMAGE_DIMENSIONS_INVALID", "Cạnh ảnh tối thiểu 32px, tối đa 25 triệu pixel.");
         var image = ImageOrientation.apply(reader.read(0), ImageOrientation.read(rawBytes));
-        int maxDim = 1600;
         if (image.getWidth() > maxDim || image.getHeight() > maxDim) {
           int tw = image.getWidth(), th = image.getHeight();
           if (tw > th) {
@@ -679,13 +757,24 @@ public class MediaService {
         }
         var out = new ByteArrayOutputStream();
         ImageIO.write(image, "png", out);
-        pngBytes = out.toByteArray();
+        return out.toByteArray();
       } finally {
         reader.dispose();
       }
     } catch (IOException e) {
       throw new Problem(415, "IMAGE_INVALID", "Không đọc được file ảnh tải lên.");
     }
+  }
+
+  /** Chuẩn hóa ảnh chat sang PNG sạch EXIF, lưu R2 private prefix chat/{owner}/ và cache local. */
+  public String saveChatImage(String ownerFolder, byte[] rawBytes) {
+    Problem.require(rawBytes != null && rawBytes.length > 0 && rawBytes.length <= 10 * 1024 * 1024,
+        413, "FILE_TOO_LARGE", "Ảnh chat không được rỗng và tối đa 10 MB.");
+    String safeOwner = (ownerFolder == null ? "guest" : ownerFolder.replaceAll("[^A-Za-z0-9_-]", ""));
+    if (safeOwner.isBlank()) safeOwner = "guest";
+    if (safeOwner.length() > 40) safeOwner = safeOwner.substring(0, 40);
+
+    byte[] pngBytes = normalizeUploadedImage(rawBytes, 1600, "Ảnh chat");
 
     String uuid = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
     String key = "chat/" + safeOwner + "/msg-" + uuid + ".png";

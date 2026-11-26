@@ -203,6 +203,14 @@ public class ChatService {
     if (cleanImage != null) {
       Problem.require(cleanImage.matches("chat/[A-Za-z0-9_\\-]+/[A-Za-z0-9_\\-]+[.]png") && !cleanImage.contains(".."),
           422, "CHAT_IMAGE_KEY_INVALID", "Đường dẫn ảnh đính kèm không hợp lệ.");
+      String rawOwner = (userId != null && !userId.isBlank())
+          ? userId
+          : (sessionId != null && sessionId.matches("[A-Za-z0-9_-]{4,36}") ? sessionId : "guest");
+      String expectedOwner = rawOwner.replaceAll("[^A-Za-z0-9_-]", "");
+      if (expectedOwner.isBlank()) expectedOwner = "guest";
+      if (expectedOwner.length() > 40) expectedOwner = expectedOwner.substring(0, 40);
+      Problem.require(cleanImage.startsWith("chat/" + expectedOwner + "/"),
+          403, "CHAT_IMAGE_FORBIDDEN", "Bạn không có quyền sử dụng ảnh đính kèm này.");
     }
     if (content.isBlank() && cleanImage != null) {
       content = "Mình gửi ảnh đính kèm, nhờ hỗ trợ tư vấn giúp mình ạ.";

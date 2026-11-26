@@ -697,7 +697,9 @@ public class ScoringService {
     var result = new ArrayList<Map<String, Object>>();
     for (var row :
         db.rows(
-            "SELECT b.MaBienThe,b.TenMau,b.MaMauSac,COALESCE(b.GiaKhuyenMai,b.GiaNiemYet) AS price,p.MaSanPham,p.TenSanPham,"
+            "SELECT b.MaBienThe,b.MaQuanLyHangHoa AS sku,b.KichCo AS size,b.SoLuongTonKho AS stock,"
+                + "COALESCE(b.ViTriGiaKe,'KHO-01') AS shelf,b.TenMau,b.MaMauSac,"
+                + "COALESCE(b.GiaKhuyenMai,b.GiaNiemYet) AS price,p.MaSanPham,p.TenSanPham,"
                 + " (SELECT MaHinhAnh FROM HinhAnhSanPham WHERE MaSanPham=p.MaSanPham ORDER BY LaAnhDaiDien DESC,ThuTuHienThi,MaHinhAnh LIMIT 1) AS MaHinhAnh"
                 + " FROM BienTheSanPham b JOIN SanPham p ON p.MaSanPham=b.MaSanPham"
                 + " WHERE b.SoLuongTonKho>0 AND b.TrangThai='DANG_BAN' AND p.TrangThaiSanPham='DANG_KINH_DOANH'"
@@ -713,6 +715,10 @@ public class ScoringService {
         var map = new LinkedHashMap<String, Object>();
         map.put("variantId", row.get("MaBienThe"));
         map.put("productId", row.get("MaSanPham"));
+        map.put("sku", row.get("sku"));
+        map.put("size", row.get("size"));
+        map.put("stock", row.get("stock"));
+        map.put("shelf", row.get("shelf"));
         map.put("name", row.get("TenSanPham"));
         map.put("productName", row.get("TenSanPham"));
         map.put("colorName", row.get("TenMau"));

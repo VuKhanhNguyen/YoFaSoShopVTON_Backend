@@ -137,7 +137,8 @@ public class SecurityConfig {
                         "/api/v1/full-address", "/api/v1/new-full-address",
                         "/api/v1/search-address", "/api/v1/search-new-address", "/api/v1/suggest",
                         "/api/v1/profile", "/api/v1/merge-history/**",
-                        "/api/v1/users/*/avatar")
+                        "/api/v1/users/*/avatar",
+                        "/api/v1/reviews/*/image")
                     .permitAll()
                     .anyRequest()
                     .authenticated())

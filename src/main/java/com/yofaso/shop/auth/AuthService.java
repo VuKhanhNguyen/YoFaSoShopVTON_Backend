@@ -149,9 +149,8 @@ public class AuthService {
     String avatarKey = Db.text(user, "avatarKey");
     if (!avatarKey.isEmpty()) {
       user.put("avatarUrl", "/api/v1/users/" + id + "/avatar?v=" + Idempotency.hash(avatarKey).substring(0, 8));
-      if (!catalogBase.isEmpty()) {
-        user.put("avatarDirectUrl", catalogBase + "/" + avatarKey);
-      }
+      // Avatars được chuyển sang yofasoshop-private (không trỏ trực tiếp public CDN URL)
+      user.put("avatarDirectUrl", null);
     } else {
       user.put("avatarUrl", null);
       user.put("avatarDirectUrl", null);

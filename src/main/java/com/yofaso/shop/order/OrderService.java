@@ -4,6 +4,8 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -31,7 +33,7 @@ public class OrderService {
           + " AND TrangThaiThanhToan='CHUA_THANH_TOAN'"
           + " AND NgayTao <= CURRENT_TIMESTAMP - INTERVAL 15 MINUTE) AS paymentExpired,"
           + " TienGiamGia AS discount,PhiVanChuyen AS shippingFee,SoTienThuHo AS"
-          + " collectAmount,MaNguoiGiaoHang AS shipperId,MaKhuyenMai AS promotionId,"
+          + " collectAmount,MaNguoiGiaoHang AS shipperId,MaKhuyenMai AS promotionId,GhiChuDonHang AS orderNote,"
           + " (TrangThaiDonHang='TRA_HANG' AND NOT EXISTS (SELECT 1 FROM BienDongKho b"
           + " WHERE b.MaThamChieu=DonHang.MaDonHang AND (b.LoaiBienDong='NHAP_KHO_HANG_HOAN'"
           + " OR b.GhiChu='Hàng hoàn lỗi - chuyển kho chờ thanh lý')"
@@ -55,6 +57,8 @@ public class OrderService {
             "SELECT c.MaChiTietDonHang AS orderLineId,c.MaBienThe AS variantId,c.TenSanPhamLucDatHang AS"
                 + " productName,c.TenMauLucDatHang AS colorName,c.KichCoLucDatHang AS size,c.SoLuong AS"
                 + " quantity,c.DonGiaLucDatHang AS unitPrice,c.MaPhienThuDo AS sessionId,"
+                + "(SELECT dg.MaDanhGia FROM DanhGiaSanPham dg WHERE dg.MaChiTietDonHang = c.MaChiTietDonHang LIMIT 1) AS reviewId,"
+                + "(SELECT dg.TrangThaiDuyet FROM DanhGiaSanPham dg WHERE dg.MaChiTietDonHang = c.MaChiTietDonHang LIMIT 1) AS reviewStatus,"
                 + "(SELECT h.MaHinhAnh FROM HinhAnhSanPham h JOIN BienTheSanPham b ON b.MaSanPham = h.MaSanPham WHERE b.MaBienThe = c.MaBienThe AND (h.MaMauSac = b.MaMauSac OR h.LaAnhDaiDien = 1) ORDER BY (h.MaMauSac = b.MaMauSac) DESC, h.LaAnhDaiDien DESC, h.ThuTuHienThi ASC LIMIT 1) AS imageId FROM"
                 + " ChiTietDonHang c WHERE c.MaDonHang=?",
             id);
@@ -90,6 +94,8 @@ public class OrderService {
               "SELECT c.MaChiTietDonHang AS orderLineId,c.MaBienThe AS variantId,c.TenSanPhamLucDatHang AS"
                   + " productName,c.TenMauLucDatHang AS colorName,c.KichCoLucDatHang AS size,c.SoLuong AS"
                   + " quantity,c.DonGiaLucDatHang AS unitPrice,c.MaPhienThuDo AS sessionId,"
+                  + "(SELECT dg.MaDanhGia FROM DanhGiaSanPham dg WHERE dg.MaChiTietDonHang = c.MaChiTietDonHang LIMIT 1) AS reviewId,"
+                  + "(SELECT dg.TrangThaiDuyet FROM DanhGiaSanPham dg WHERE dg.MaChiTietDonHang = c.MaChiTietDonHang LIMIT 1) AS reviewStatus,"
                   + "(SELECT h.MaHinhAnh FROM HinhAnhSanPham h JOIN BienTheSanPham b ON b.MaSanPham = h.MaSanPham WHERE b.MaBienThe = c.MaBienThe AND (h.MaMauSac = b.MaMauSac OR h.LaAnhDaiDien = 1) ORDER BY (h.MaMauSac = b.MaMauSac) DESC, h.LaAnhDaiDien DESC, h.ThuTuHienThi ASC LIMIT 1) AS imageId FROM"
                   + " ChiTietDonHang c WHERE c.MaDonHang=?",
               id);
@@ -141,12 +147,17 @@ public class OrderService {
       shift = Db.text(s, "MaCaLamViec");
     }
     var items = new TreeMap<String, Integer>();
+    var itemSessionHints = new HashMap<String, String>();
     for (var item : b.items()) {
       Problem.require(
           !items.containsKey(item.variantId()), 422, "DUPLICATE_VARIANT", "SKU bị lặp trong đơn.");
       items.put(item.variantId(), item.quantity());
+      if (item.sessionId() != null && !item.sessionId().isBlank()) {
+        itemSessionHints.put(item.variantId(), item.sessionId().trim());
+      }
     }
     var snapshots = new ArrayList<Map<String, Object>>();
+    var priceByVariant = new HashMap<String, BigDecimal>();
     BigDecimal subtotal = BigDecimal.ZERO;
     for (var e : items.entrySet()) {
       var v =
@@ -165,17 +176,14 @@ public class OrderService {
       v.put("quantity", e.getValue());
       v.put("unitPrice", price);
       snapshots.add(v);
+      priceByVariant.put(e.getKey(), price);
       subtotal = subtotal.add(price.multiply(BigDecimal.valueOf(e.getValue())));
     }
-    if (b.voucher() != null && !b.voucher().isBlank() && customer != null) {
-      long usedInOtherOrder = db.count(
-          "SELECT COUNT(*) FROM DonHang WHERE MaNguoiDung=? AND MaKhuyenMai=(SELECT MaKhuyenMai FROM KhuyenMai WHERE MaPhieuGiamGia=?) AND TrangThaiDonHang NOT IN ('DA_HUY', 'TRA_HANG')",
-          customer, b.voucher().trim());
-      Problem.require(usedInOtherOrder == 0, 409, "VOUCHER_ALREADY_USED", "Bạn đã sử dụng mã voucher này trong một đơn hàng trước đó.");
-    }
-    Map<String, Object> promo = discount(b.voucher(), subtotal, true);
-    BigDecimal discount = (BigDecimal) promo.get("discount");
-    BigDecimal total = subtotal.subtract(discount);
+    var quote = computeQuote(customer, items, priceByVariant, itemSessionHints, b.voucher(), b.sessionId(), pos, true);
+    BigDecimal comboDiscount = quote.comboDiscount();
+    BigDecimal discount = quote.totalDiscount();
+    BigDecimal shippingFee = quote.shippingFee();
+    BigDecimal total = quote.total();
     String id = keys.resourceId(actor, scope, key, "DH");
     String method = pos ? "TIEN_MAT_TAI_QUAY" : "COD_TIEN_MAT_KHI_NHAN";
     boolean isVietQr = false;
@@ -211,10 +219,17 @@ public class OrderService {
                 + Db.text(address, "TinhThanhPho");
     Problem.require(addressText == null || addressText.length() <= 255, 422, "ADDRESS_TOO_LONG",
         "Địa chỉ giao hàng vượt 255 ký tự; cập nhật sổ địa chỉ trước khi đặt hàng.");
+    String orderNote = null;
+    if (comboDiscount.compareTo(BigDecimal.ZERO) > 0) {
+      orderNote = "Ưu đãi Combo VTON -5%: -" + comboDiscount.setScale(0, RoundingMode.HALF_UP) + "đ";
+      if (quote.voucherCode() != null && quote.voucherDiscount().compareTo(BigDecimal.ZERO) > 0) {
+        orderNote += " | Voucher " + quote.voucherCode() + ": -" + quote.voucherDiscount().setScale(0, RoundingMode.HALF_UP) + "đ";
+      }
+    }
     db.exec(
         "INSERT INTO"
-            + " DonHang(MaDonHang,MaNguoiDung,KenhBanHang,MaThuNgan,MaDiaChiGiaoHang,TenNguoiNhan,SoDienThoaiNhan,DiaChiGiaoChiTiet,TienGiamGia,PhiVanChuyen,PhuongThucThanhToan,TrangThaiThanhToan,TrangThaiDonHang,SoTienThuHo,MaKhuyenMai)"
-            + " VALUES(?,?,?,?,?,?,?,?,?,0,?,?,?,?,?)",
+            + " DonHang(MaDonHang,MaNguoiDung,KenhBanHang,MaThuNgan,MaDiaChiGiaoHang,TenNguoiNhan,SoDienThoaiNhan,DiaChiGiaoChiTiet,TienGiamGia,PhiVanChuyen,PhuongThucThanhToan,TrangThaiThanhToan,TrangThaiDonHang,SoTienThuHo,MaKhuyenMai,GhiChuDonHang)"
+            + " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         id,
         customer,
         pos ? "TAI_QUAY_POS" : "ONLINE_APP",
@@ -224,18 +239,20 @@ public class OrderService {
         phone,
         addressText,
         discount,
+        shippingFee,
         method,
         pos ? "DA_THANH_TOAN" : "CHUA_THANH_TOAN",
         pos ? "HOAN_TAT" : "CHO_XAC_NHAN",
         (pos || isVietQr) ? BigDecimal.ZERO : total,
-        promo.get("promotionId"));
-    if (promo.get("promotionId") != null && customer != null) {
+        quote.promotionId(),
+        orderNote);
+    if (quote.promotionId() != null && customer != null) {
       try {
         db.exec(
             "INSERT INTO NguoiDung_KhuyenMai (MaNguoiDung, MaKhuyenMai, NgayThuThap, TrangThai, NgaySuDung, MaDonHangDaDung) "
-                + "VALUES (?, ?, CURRENT_TIMESTAMP, 'CHUA_DUNG', CURRENT_TIMESTAMP, ?) "
-                + "ON DUPLICATE KEY UPDATE NgaySuDung=CURRENT_TIMESTAMP, MaDonHangDaDung=VALUES(MaDonHangDaDung)",
-            customer, promo.get("promotionId"), id);
+                + "VALUES (?, ?, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP, ?) "
+                + "ON DUPLICATE KEY UPDATE TrangThai=VALUES(TrangThai), NgaySuDung=CURRENT_TIMESTAMP, MaDonHangDaDung=VALUES(MaDonHangDaDung)",
+            customer, quote.promotionId(), pos ? "DA_DUNG" : "CHUA_DUNG", id);
       } catch (Exception ignored) {}
     }
     if (pos)
@@ -243,6 +260,7 @@ public class OrderService {
     for (var v : snapshots) {
       String variant = Db.text(v, "MaBienThe");
       int quantity = (int) v.get("quantity");
+      String lineSessionId = quote.variantSessionMap().get(variant);
       stock.move(
           variant,
           -quantity,
@@ -252,8 +270,8 @@ public class OrderService {
           "Giữ tồn khi tạo đơn");
       db.exec(
           "INSERT INTO"
-              + " ChiTietDonHang(MaChiTietDonHang,MaDonHang,MaBienThe,TenSanPhamLucDatHang,TenMauLucDatHang,KichCoLucDatHang,SoLuong,DonGiaLucDatHang)"
-              + " VALUES(?,?,?,?,?,?,?,?)",
+              + " ChiTietDonHang(MaChiTietDonHang,MaDonHang,MaBienThe,TenSanPhamLucDatHang,TenMauLucDatHang,KichCoLucDatHang,SoLuong,DonGiaLucDatHang,MaPhienThuDo)"
+              + " VALUES(?,?,?,?,?,?,?,?,?)",
           Db.id("CTDH"),
           id,
           variant,
@@ -261,7 +279,8 @@ public class OrderService {
           v.get("TenMau"),
           v.get("KichCo"),
           quantity,
-          v.get("unitPrice"));
+          v.get("unitPrice"),
+          lineSessionId);
     }
     if (!pos)
       db.exec(
@@ -270,10 +289,351 @@ public class OrderService {
               + " MaDonHang=?)",
           actor,
           id);
+    if (pos) {
+      markSuggestionsPurchased(customer, id, b.sessionId());
+    }
     keys.complete(actor, scope, key, id);
     db.audit(actor, "ORDER_CREATE", id);
     if (customer != null) notice(customer, id, "Đơn hàng đã được tạo.");
+    if (!pos) {
+      notifyRole(
+          "ROLE_STAFF_WAREHOUSE",
+          "Đơn hàng online mới #" + id,
+          "Khách " + name + " vừa đặt đơn hàng mới (" + snapshots.size() + " dòng hàng). Vui lòng tiếp nhận đóng gói.",
+          "DON_HANG",
+          "/warehouse");
+      notifyRole(
+          "ROLE_SHOP_ADMIN",
+          "Đơn hàng mới #" + id,
+          "Đơn hàng online #" + id + " từ " + name + " (" + total.setScale(0, RoundingMode.HALF_UP) + "đ).",
+          "DON_HANG",
+          "/admin");
+    }
     return detail(id);
+  }
+
+  private static final BigDecimal FREE_SHIP_THRESHOLD = BigDecimal.valueOf(1_000_000);
+  private static final BigDecimal DEFAULT_SHIPPING_FEE = BigDecimal.valueOf(30_000);
+
+  private record QuoteInternal(
+      BigDecimal subtotal,
+      BigDecimal comboDiscount,
+      List<String> comboVariantIds,
+      String comboSessionId,
+      BigDecimal voucherDiscount,
+      String voucherCode,
+      String voucherName,
+      String voucherType,
+      String promotionId,
+      BigDecimal totalDiscount,
+      BigDecimal shippingFee,
+      String shippingFreeReason,
+      BigDecimal total,
+      List<Map<String, Object>> discountDetails,
+      Map<String, String> variantSessionMap,
+      String voucherWarning) {}
+
+  /** Báo giá chính thức phía server: Combo VTON -5% trước, Voucher trên (subtotal - comboDiscount), thống nhất phí ship. */
+  public Map<String, Object> quoteOrder(
+      String customerId,
+      List<OrderController.Item> rawItems,
+      String voucherCode,
+      String requestSessionId,
+      boolean pos,
+      boolean consume) {
+    var items = new TreeMap<String, Integer>();
+    var hints = new HashMap<String, String>();
+    for (var item : rawItems) {
+      items.merge(item.variantId(), item.quantity(), Integer::sum);
+      if (item.sessionId() != null && !item.sessionId().isBlank()) {
+        hints.put(item.variantId(), item.sessionId().trim());
+      }
+    }
+    var prices = new HashMap<String, BigDecimal>();
+    for (String vid : items.keySet()) {
+      var v = db.one("SELECT COALESCE(GiaKhuyenMai,GiaNiemYet) AS price FROM BienTheSanPham WHERE MaBienThe=?", vid);
+      prices.put(vid, Db.money(v, "price"));
+    }
+    var q = computeQuote(customerId, items, prices, hints, voucherCode, requestSessionId, pos, consume);
+    var res = new LinkedHashMap<String, Object>();
+    res.put("subtotal", q.subtotal());
+    res.put("comboEligible", q.comboDiscount().compareTo(BigDecimal.ZERO) > 0);
+    res.put("comboDiscount", q.comboDiscount());
+    res.put("comboVariantIds", q.comboVariantIds());
+    res.put("comboSessionId", q.comboSessionId());
+    res.put("voucherDiscount", q.voucherDiscount());
+    res.put("voucherCode", q.voucherCode());
+    res.put("voucherName", q.voucherName());
+    res.put("voucherType", q.voucherType());
+    res.put("promotionId", q.promotionId());
+    res.put("discount", q.totalDiscount());
+    res.put("totalDiscount", q.totalDiscount());
+    res.put("shippingFee", q.shippingFee());
+    res.put(
+        "shippingDiscount",
+        !pos && q.subtotal().compareTo(BigDecimal.ZERO) > 0 && q.shippingFee().compareTo(BigDecimal.ZERO) == 0
+            ? DEFAULT_SHIPPING_FEE
+            : BigDecimal.ZERO);
+    res.put("shippingFreeReason", q.shippingFreeReason());
+    res.put("total", q.total());
+    res.put("discountDetails", q.discountDetails());
+    if (q.voucherWarning() != null) res.put("voucherWarning", q.voucherWarning());
+    return res;
+  }
+
+  private QuoteInternal computeQuote(
+      String customerId,
+      Map<String, Integer> items,
+      Map<String, BigDecimal> prices,
+      Map<String, String> itemSessionHints,
+      String rawVoucherCode,
+      String requestSessionId,
+      boolean pos,
+      boolean consume) {
+    BigDecimal subtotal = BigDecimal.ZERO;
+    for (var e : items.entrySet()) {
+      subtotal = subtotal.add(prices.get(e.getKey()).multiply(BigDecimal.valueOf(e.getValue())));
+    }
+
+    // 1. Resolve VTON session links and detect eligible VTON Combo (-5%) pairs
+    var variantSessionMap = new HashMap<String, String>();
+    var comboVariantSet = new LinkedHashSet<String>();
+    String comboSessionId = null;
+    BigDecimal comboEligibleSubtotal = BigDecimal.ZERO;
+    var variantList = new ArrayList<>(items.keySet());
+
+    // Query valid VTON pairs (PhienThuDoAo THANH_CONG + GoiYPhoiDo) owned by customer or matching explicit sessionId
+    List<Map<String, Object>> candidatePairs = new ArrayList<>();
+    if (variantList.size() >= 2) {
+      if (customerId != null && !customerId.isBlank()) {
+        candidatePairs.addAll(
+            db.rows(
+                "SELECT p.MaPhienThuDo AS sessionId, p.MaBienThe AS mainVariant, g.MaBienTheGoiY AS recVariant"
+                    + " FROM PhienThuDoAo p JOIN GoiYPhoiDo g ON g.MaPhienThuDo = p.MaPhienThuDo"
+                    + " WHERE p.MaNguoiDung = ? AND p.TrangThaiPhien = 'THANH_CONG'"
+                    + " ORDER BY p.ThoiGianKhoiTao DESC",
+                customerId));
+      }
+      if (requestSessionId != null && !requestSessionId.isBlank()) {
+        candidatePairs.addAll(
+            db.rows(
+                "SELECT p.MaPhienThuDo AS sessionId, p.MaBienThe AS mainVariant, g.MaBienTheGoiY AS recVariant"
+                    + " FROM PhienThuDoAo p JOIN GoiYPhoiDo g ON g.MaPhienThuDo = p.MaPhienThuDo"
+                    + " WHERE p.MaPhienThuDo = ? AND p.TrangThaiPhien = 'THANH_CONG'",
+                requestSessionId.trim()));
+      }
+    }
+    for (var pair : candidatePairs) {
+      String mainV = Db.text(pair, "mainVariant");
+      String recV = Db.text(pair, "recVariant");
+      String sid = Db.text(pair, "sessionId");
+      if (!mainV.equals(recV)
+          && items.containsKey(mainV)
+          && items.containsKey(recV)
+          && !comboVariantSet.contains(mainV)
+          && !comboVariantSet.contains(recV)) {
+        int pairQty = Math.min(items.get(mainV), items.get(recV));
+        BigDecimal pairTotal =
+            prices.get(mainV).add(prices.get(recV)).multiply(BigDecimal.valueOf(pairQty));
+        comboEligibleSubtotal = comboEligibleSubtotal.add(pairTotal);
+        comboVariantSet.add(mainV);
+        comboVariantSet.add(recV);
+        if (comboSessionId == null) comboSessionId = sid;
+        variantSessionMap.putIfAbsent(mainV, sid);
+        variantSessionMap.putIfAbsent(recV, sid);
+      }
+    }
+
+    // Attach explicit or historical VTON session IDs to remaining lines for analytics attribution
+    for (String vid : variantList) {
+      if (variantSessionMap.containsKey(vid)) continue;
+      String hint = itemSessionHints.get(vid);
+      if (hint == null || hint.isBlank()) hint = requestSessionId;
+      if (hint != null && !hint.isBlank()) {
+        long exists = db.count("SELECT COUNT(*) FROM PhienThuDoAo WHERE MaPhienThuDo=?", hint.trim());
+        if (exists > 0) {
+          variantSessionMap.put(vid, hint.trim());
+          continue;
+        }
+      }
+      if (customerId != null && !customerId.isBlank()) {
+        var recent =
+            db.rows(
+                "SELECT MaPhienThuDo FROM PhienThuDoAo WHERE MaNguoiDung=? AND MaBienThe=? AND TrangThaiPhien='THANH_CONG' ORDER BY ThoiGianKhoiTao DESC LIMIT 1",
+                customerId,
+                vid);
+        if (!recent.isEmpty()) {
+          variantSessionMap.put(vid, Db.text(recent.getFirst(), "MaPhienThuDo"));
+        }
+      }
+    }
+
+    BigDecimal comboDiscount =
+        comboEligibleSubtotal.compareTo(BigDecimal.ZERO) > 0
+            ? comboEligibleSubtotal.multiply(BigDecimal.valueOf(5)).divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP)
+            : BigDecimal.ZERO;
+    BigDecimal subtotalAfterCombo = subtotal.subtract(comboDiscount).max(BigDecimal.ZERO);
+
+    // 2. Apply Voucher on (subtotal - comboDiscount) per business rule
+    BigDecimal voucherDiscount = BigDecimal.ZERO;
+    String promotionId = null;
+    String voucherCode = null;
+    String voucherName = null;
+    String voucherType = null;
+    String voucherWarning = null;
+    boolean freeShipVoucher = false;
+
+    String cleanCode = rawVoucherCode == null ? "" : rawVoucherCode.trim();
+    if (!cleanCode.isBlank()) {
+      boolean alreadyUsed = false;
+      if (customerId != null && !customerId.isBlank()) {
+        long usedInOtherOrder =
+            db.count(
+                "SELECT COUNT(*) FROM DonHang WHERE MaNguoiDung=? AND MaKhuyenMai=(SELECT MaKhuyenMai FROM KhuyenMai WHERE MaPhieuGiamGia=?) AND TrangThaiDonHang NOT IN ('DA_HUY', 'TRA_HANG')",
+                customerId,
+                cleanCode);
+        alreadyUsed = usedInOtherOrder > 0;
+        if (consume) {
+          Problem.require(!alreadyUsed, 409, "VOUCHER_ALREADY_USED", "Bạn đã sử dụng mã voucher này trong một đơn hàng trước đó.");
+        }
+      }
+      if (alreadyUsed) {
+        voucherWarning = "Bạn đã sử dụng mã " + cleanCode + " trong đơn hàng trước đó.";
+      } else {
+        var promoRows =
+            db.rows(
+                "SELECT * FROM KhuyenMai WHERE MaPhieuGiamGia=? AND TrangThai='DANG_DIEN_RA' AND"
+                    + " NgayBatDau<=CURRENT_TIMESTAMP AND NgayKetThuc>=CURRENT_TIMESTAMP"
+                    + (consume ? " FOR UPDATE" : ""),
+                cleanCode);
+        if (promoRows.isEmpty()) {
+          if (consume) {
+            throw new Problem(404, "NOT_FOUND", "Mã voucher không tồn tại hoặc đã hết hạn.");
+          }
+          voucherWarning = "Mã voucher " + cleanCode + " không hợp lệ hoặc đã hết hạn.";
+        } else {
+          var p = promoRows.getFirst();
+          int used = ((Number) p.get("SoLuongDaDung")).intValue();
+          int issued = ((Number) p.get("SoLuongPhatHanh")).intValue();
+          BigDecimal minTotal = Db.money(p, "GiaTriDonHangToiThieu");
+          boolean eligible = used < issued && subtotalAfterCombo.compareTo(minTotal) >= 0;
+          if (!eligible) {
+            if (consume) {
+              throw new Problem(409, "VOUCHER_UNAVAILABLE", "Voucher hết lượt hoặc chưa đạt đơn tối thiểu.");
+            }
+            voucherWarning =
+                used >= issued
+                    ? "Voucher " + cleanCode + " đã hết lượt sử dụng."
+                    : "Đơn sau ưu đãi combo cần đạt tối thiểu " + minTotal.setScale(0, RoundingMode.HALF_UP) + "đ để áp dụng " + cleanCode + ".";
+          } else {
+            voucherCode = Db.text(p, "MaPhieuGiamGia");
+            voucherName = Db.text(p, "TenChuongTrinh");
+            voucherType = Db.text(p, "LoaiGiamGia");
+            promotionId = Db.text(p, "MaKhuyenMai");
+            BigDecimal value = Db.money(p, "GiaTriGiam");
+            if ("MIEN_PHI_VAN_CHUYEN".equals(voucherType)) {
+              freeShipVoucher = true;
+            } else {
+              BigDecimal amount =
+                  switch (voucherType) {
+                    case "PHAN_TRAM" ->
+                        subtotalAfterCombo.multiply(value).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+                    case "TIEN_MAT_TRUC_TIEP" -> value;
+                    default -> BigDecimal.ZERO;
+                  };
+              if (p.get("GiamToiDa") != null) amount = amount.min(Db.money(p, "GiamToiDa"));
+              voucherDiscount = amount.min(subtotalAfterCombo);
+            }
+            if (consume) {
+              db.exec("UPDATE KhuyenMai SET SoLuongDaDung=SoLuongDaDung+1 WHERE MaKhuyenMai=?", promotionId);
+            }
+          }
+        }
+      }
+    }
+
+    // 3. Shipping fee calculation
+    BigDecimal shippingFee = BigDecimal.ZERO;
+    String shippingFreeReason = null;
+    if (!pos && subtotal.compareTo(BigDecimal.ZERO) > 0) {
+      if (freeShipVoucher) {
+        shippingFee = BigDecimal.ZERO;
+        shippingFreeReason = "Voucher " + voucherCode;
+      } else if (subtotal.compareTo(FREE_SHIP_THRESHOLD) >= 0) {
+        shippingFee = BigDecimal.ZERO;
+        shippingFreeReason = "Miễn phí vận chuyển đơn từ 1.000.000đ";
+      } else {
+        shippingFee = DEFAULT_SHIPPING_FEE;
+      }
+    }
+
+    // 4. Discount breakdown list
+    var discountDetails = new ArrayList<Map<String, Object>>();
+    if (comboDiscount.compareTo(BigDecimal.ZERO) > 0) {
+      discountDetails.add(
+          Map.of(
+              "code", "COMBO_VTON_5",
+              "label", "Ưu đãi Combo phối đồ AI VTON (-5%)",
+              "kind", "COMBO_VTON",
+              "amount", comboDiscount));
+    }
+    if (voucherDiscount.compareTo(BigDecimal.ZERO) > 0 && voucherCode != null) {
+      discountDetails.add(
+          Map.of(
+              "code", voucherCode,
+              "label", voucherName != null && !voucherName.isBlank() ? voucherName : "Voucher " + voucherCode,
+              "kind", "VOUCHER",
+              "amount", voucherDiscount));
+    }
+    if (freeShipVoucher && !pos && subtotal.compareTo(BigDecimal.ZERO) > 0 && subtotal.compareTo(FREE_SHIP_THRESHOLD) < 0) {
+      discountDetails.add(
+          Map.of(
+              "code", voucherCode,
+              "label", "Miễn phí vận chuyển (" + voucherCode + ")",
+              "kind", "SHIPPING",
+              "amount", DEFAULT_SHIPPING_FEE));
+    }
+
+    BigDecimal totalDiscount = comboDiscount.add(voucherDiscount);
+    BigDecimal total = subtotal.subtract(totalDiscount).add(shippingFee).max(BigDecimal.ZERO);
+
+    return new QuoteInternal(
+        subtotal,
+        comboDiscount,
+        new ArrayList<>(comboVariantSet),
+        comboSessionId,
+        voucherDiscount,
+        voucherCode,
+        voucherName,
+        voucherType,
+        promotionId,
+        totalDiscount,
+        shippingFee,
+        shippingFreeReason,
+        total,
+        discountDetails,
+        variantSessionMap,
+        voucherWarning);
+  }
+
+  private void markSuggestionsPurchased(String customerId, String orderId, String fallbackSessionId) {
+    if (customerId != null && !customerId.isBlank()) {
+      db.exec(
+          "UPDATE GoiYPhoiDo SET TrangThaiTuongTac='DA_MUA'"
+              + " WHERE TrangThaiTuongTac <> 'DA_MUA'"
+              + " AND MaBienTheGoiY IN (SELECT MaBienThe FROM ChiTietDonHang WHERE MaDonHang=?)"
+              + " AND MaPhienThuDo IN (SELECT MaPhienThuDo FROM PhienThuDoAo WHERE MaNguoiDung=?)",
+          orderId,
+          customerId);
+    } else if (fallbackSessionId != null && !fallbackSessionId.isBlank()) {
+      db.exec(
+          "UPDATE GoiYPhoiDo SET TrangThaiTuongTac='DA_MUA'"
+              + " WHERE TrangThaiTuongTac <> 'DA_MUA'"
+              + " AND MaPhienThuDo=?"
+              + " AND MaBienTheGoiY IN (SELECT MaBienThe FROM ChiTietDonHang WHERE MaDonHang=?)",
+          fallbackSessionId.trim(),
+          orderId);
+    }
   }
 
   /** Tính voucher theo giá server; khi consume khóa voucher để không dùng quá số lượng. */
@@ -447,6 +807,9 @@ public class OrderService {
         for (var line : db.rows(
             "SELECT MaBienThe FROM ChiTietDonHang WHERE MaDonHang=? ORDER BY MaBienThe", id))
           stock.move(Db.text(line, "MaBienThe"), 0, "XUAT_KHO_GIAO_HANG", id, actor, "Bàn giao kiện hàng");
+        if (shipper != null && !shipper.isBlank()) {
+          noticeDirect(shipper, "Đơn giao mới #" + id, "Kho vừa bàn giao kiện hàng #" + id + " cho tuyến của bạn.", "DON_HANG", "/shipper");
+        }
       }
       case "deliver" -> {
         boolean isAdmin = db.count(
@@ -463,6 +826,9 @@ public class OrderService {
                 + " WHERE MaDonHang=?",
             id);
         db.exec("UPDATE NguoiDung_KhuyenMai SET TrangThai='DA_DUNG' WHERE MaDonHangDaDung=?", id);
+        if (o.get("MaNguoiDung") != null) {
+          markSuggestionsPurchased(Db.text(o, "MaNguoiDung"), id, null);
+        }
       }
       case "failed" -> {
         boolean isAdmin = db.count(
@@ -540,13 +906,35 @@ public class OrderService {
 
   /** Thông báo gọn, không nhét địa chỉ/số điện thoại vào log. */
   private void notice(String user, String id, String message) {
-    db.exec(
-        "INSERT INTO ThongBao(MaThongBao,MaNguoiDung,TieuDe,NoiDung,LoaiThongBao,LienKetDieuHuong)"
-            + " VALUES(?,?,?,?,'DON_HANG',?)",
-        Db.id("TB"),
-        user,
-        "Cập nhật đơn hàng",
-        message,
-        "/orders/" + id);
+    noticeDirect(user, "Cập nhật đơn hàng", message, "DON_HANG", "/orders/" + id);
+  }
+
+  private void noticeDirect(String userId, String title, String content, String type, String link) {
+    try {
+      db.exec(
+          "INSERT INTO ThongBao(MaThongBao,MaNguoiDung,TieuDe,NoiDung,LoaiThongBao,LienKetDieuHuong)"
+              + " VALUES(?,?,?,?,?,?)",
+          Db.id("TB"),
+          userId,
+          title,
+          content,
+          type,
+          link);
+    } catch (Exception ignored) {}
+  }
+
+  private void notifyRole(String roleName, String title, String content, String type, String link) {
+    try {
+      var users =
+          db.rows(
+              "SELECT DISTINCT u.MaNguoiDung AS id FROM NguoiDung u"
+                  + " JOIN NguoiDung_VaiTro nv ON nv.MaNguoiDung=u.MaNguoiDung"
+                  + " JOIN VaiTro v ON v.MaVaiTro=nv.MaVaiTro"
+                  + " WHERE v.TenVaiTro=? AND u.TrangThaiHoatDong='HOAT_DONG'",
+              roleName);
+      for (var u : users) {
+        noticeDirect(Db.text(u, "id"), title, content, type, link);
+      }
+    } catch (Exception ignored) {}
   }
 }

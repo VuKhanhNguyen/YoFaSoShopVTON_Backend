@@ -60,15 +60,59 @@ public class StaffLookupController {
     staff.staffOrder(a,id);
     return db.rows("SELECT c.MaBienThe AS variantId,b.MaQuanLyHangHoa AS sku,c.TenSanPhamLucDatHang AS name,c.TenMauLucDatHang AS colorName,c.KichCoLucDatHang AS size,c.SoLuong AS quantity,b.ViTriGiaKe AS shelf FROM ChiTietDonHang c JOIN BienTheSanPham b ON b.MaBienThe=c.MaBienThe WHERE c.MaDonHang=? ORDER BY b.ViTriGiaKe,b.MaQuanLyHangHoa",id);
   }
-  /** O2O: khách phải cung cấp cả mã phiên và số điện thoại; không mở ảnh người riêng cho staff. */
+  /** O2O: tra danh sách 5 phiên thử đồ gần nhất của khách theo số điện thoại; không mở ảnh riêng tư. */
+  @GetMapping("/pos/try-on/sessions")
+  @PreAuthorize("hasAnyRole('SHOP_ADMIN','STAFF_CASHIER')")
+  public List<Map<String, Object>> tryOnByPhone(@RequestParam String phone) {
+    Problem.require(phone != null && phone.matches("[0-9+]{9,15}"), 400, "PHONE_INVALID", "Số điện thoại không hợp lệ.");
+    var sessions =
+        db.rows(
+            """
+            SELECT p.MaPhienThuDo AS sessionId,p.MaBienThe AS variantId,s.MaSanPham AS productId,
+              s.TenSanPham AS productName,b.MaQuanLyHangHoa AS sku,b.KichCo AS size,
+              b.TenMau AS colorName,b.MaMauSac AS colorHex,COALESCE(b.GiaKhuyenMai,b.GiaNiemYet) AS price,
+              b.SoLuongTonKho AS stock,COALESCE(b.ViTriGiaKe,'KHO-01') AS shelf,
+              n.HoVaTen AS customerName,n.SoDienThoai AS customerPhone,n.MaNguoiDung AS customerId,
+              p.ThoiGianKhoiTao AS createdAt,p.TrangThaiPhien AS status,COALESCE(p.DiemTongThe,0) AS total,
+              p.DiemTiLeVocDang AS proportion,p.DiemHoaHopMauSac AS color,p.DiemCanBangHoaTiet AS pattern,
+              p.LoiNhanXet AS advice,
+              COALESCE(
+                (SELECT CONCAT('/api/v1/catalog/images/', h.MaHinhAnh, '/content?kind=original')
+                 FROM HinhAnhSanPham h WHERE h.MaSanPham=s.MaSanPham AND h.MaMauSac=b.MaMauSac
+                   AND h.DuongDanAnhBocNen IS NOT NULL AND h.DuongDanAnhGoc NOT LIKE '%--ref%'
+                 ORDER BY h.ThuTuHienThi,h.MaHinhAnh LIMIT 1),
+                (SELECT CONCAT('/api/v1/catalog/images/', h.MaHinhAnh, '/content?kind=original')
+                 FROM HinhAnhSanPham h WHERE h.MaSanPham=s.MaSanPham
+                 ORDER BY h.LaAnhDaiDien DESC,h.ThuTuHienThi,h.MaHinhAnh LIMIT 1)
+              ) AS productImageUrl
+            FROM PhienThuDoAo p JOIN NguoiDung n ON n.MaNguoiDung=p.MaNguoiDung
+              JOIN BienTheSanPham b ON b.MaBienThe=p.MaBienThe
+              JOIN SanPham s ON s.MaSanPham=b.MaSanPham
+            WHERE n.SoDienThoai=?
+            ORDER BY p.ThoiGianKhoiTao DESC LIMIT 5
+            """,
+            phone.trim());
+    for (var row : sessions) {
+      row.put("recommendations", enrichedRecommendations(Db.text(row, "sessionId")));
+    }
+    return sessions;
+  }
+
+  /** O2O: tra phiên theo mã phiên (và SĐT nếu có; nếu truyền SĐT thì phải khớp để giữ bảo mật). */
   @GetMapping("/pos/try-on/sessions/{id}")
   @PreAuthorize("hasAnyRole('SHOP_ADMIN','STAFF_CASHIER')")
-  public Map<String,Object> tryOn(@PathVariable String id,@RequestParam String phone) {
-    Problem.require(phone.matches("[0-9+]{9,15}"),400,"PHONE_INVALID","Số điện thoại không hợp lệ.");
-    var result=db.one("""
+  public Map<String, Object> tryOn(@PathVariable String id, @RequestParam(required = false) String phone) {
+    boolean hasPhone = phone != null && !phone.isBlank();
+    if (hasPhone) {
+      Problem.require(phone.matches("[0-9+]{9,15}"), 400, "PHONE_INVALID", "Số điện thoại không hợp lệ.");
+    }
+    String baseSql =
+        """
         SELECT p.MaPhienThuDo AS sessionId,p.MaBienThe AS variantId,s.MaSanPham AS productId,
           s.TenSanPham AS productName,b.MaQuanLyHangHoa AS sku,b.KichCo AS size,
-          b.TenMau AS colorName,b.MaMauSac AS colorHex,
+          b.TenMau AS colorName,b.MaMauSac AS colorHex,COALESCE(b.GiaKhuyenMai,b.GiaNiemYet) AS price,
+          b.SoLuongTonKho AS stock,COALESCE(b.ViTriGiaKe,'KHO-01') AS shelf,
+          n.HoVaTen AS customerName,n.SoDienThoai AS customerPhone,n.MaNguoiDung AS customerId,
           COALESCE(
             (SELECT CONCAT('/api/v1/catalog/images/', h.MaHinhAnh, '/content?kind=original')
              FROM HinhAnhSanPham h WHERE h.MaSanPham=s.MaSanPham AND h.MaMauSac=b.MaMauSac
@@ -84,15 +128,19 @@ public class StaffLookupController {
         FROM PhienThuDoAo p JOIN NguoiDung n ON n.MaNguoiDung=p.MaNguoiDung
           JOIN BienTheSanPham b ON b.MaBienThe=p.MaBienThe
           JOIN SanPham s ON s.MaSanPham=b.MaSanPham
-        WHERE p.MaPhienThuDo=? AND n.SoDienThoai=?
-        """,id,phone);
-    var op = db.runtime().findById("operations", id);
+        WHERE p.MaPhienThuDo=?
+        """;
+    var result = hasPhone
+        ? db.one(baseSql + " AND n.SoDienThoai=?", id.trim(), phone.trim())
+        : db.one(baseSql, id.trim());
+    var op = db.runtime().findById("operations", id.trim());
     String sourceSessionId = op == null ? "" : Db.text(op, "SourceSessionId");
-    if (!sourceSessionId.isBlank() && !sourceSessionId.equals(id)) {
+    if (!sourceSessionId.isBlank() && !sourceSessionId.equals(id.trim())) {
       var linked = db.rows("""
           SELECT p.MaPhienThuDo AS sessionId,p.MaBienThe AS variantId,s.MaSanPham AS productId,
             s.TenSanPham AS productName,b.MaQuanLyHangHoa AS sku,b.KichCo AS size,
-            b.TenMau AS colorName,b.MaMauSac AS colorHex,
+            b.TenMau AS colorName,b.MaMauSac AS colorHex,COALESCE(b.GiaKhuyenMai,b.GiaNiemYet) AS price,
+            b.SoLuongTonKho AS stock,COALESCE(b.ViTriGiaKe,'KHO-01') AS shelf,
             COALESCE(
               (SELECT CONCAT('/api/v1/catalog/images/', h.MaHinhAnh, '/content?kind=original')
                FROM HinhAnhSanPham h WHERE h.MaSanPham=s.MaSanPham AND h.MaMauSac=b.MaMauSac
@@ -105,14 +153,34 @@ public class StaffLookupController {
           FROM PhienThuDoAo p JOIN NguoiDung n ON n.MaNguoiDung=p.MaNguoiDung
             JOIN BienTheSanPham b ON b.MaBienThe=p.MaBienThe
             JOIN SanPham s ON s.MaSanPham=b.MaSanPham
-          WHERE p.MaPhienThuDo=? AND n.SoDienThoai=?
-          """, sourceSessionId, phone);
+          WHERE p.MaPhienThuDo=?
+          """, sourceSessionId);
       if (!linked.isEmpty()) {
         result.put("sourceSessionId", sourceSessionId);
         result.put("pairedItem", linked.getFirst());
       }
     }
-    result.put("recommendations",db.rows("SELECT MaGoiY AS recommendationId,MaBienTheGoiY AS variantId,DiemSauKhiPhoiKem AS projectedScore,LyDoGoiY AS reason FROM GoiYPhoiDo WHERE MaPhienThuDo=? ORDER BY DiemSauKhiPhoiKem DESC",id));
+    result.put("recommendations", enrichedRecommendations(id.trim()));
     return result;
+  }
+
+  private List<Map<String, Object>> enrichedRecommendations(String sessionId) {
+    return db.rows(
+        """
+        SELECT g.MaGoiY AS recommendationId,g.MaBienTheGoiY AS variantId,
+          b.MaSanPham AS productId,b.MaQuanLyHangHoa AS sku,s.TenSanPham AS productName,
+          b.KichCo AS size,b.TenMau AS colorName,COALESCE(b.GiaKhuyenMai,b.GiaNiemYet) AS price,
+          b.SoLuongTonKho AS stock,COALESCE(b.ViTriGiaKe,'KHO-01') AS shelf,
+          g.DiemSauKhiPhoiKem AS projectedScore,g.LyDoGoiY AS reason,g.TrangThaiTuongTac AS status,
+          (SELECT CONCAT('/api/v1/catalog/images/', h.MaHinhAnh, '/content?kind=original')
+           FROM HinhAnhSanPham h WHERE h.MaSanPham=s.MaSanPham
+           ORDER BY h.LaAnhDaiDien DESC,h.ThuTuHienThi ASC LIMIT 1) AS imageUrl
+        FROM GoiYPhoiDo g
+        JOIN BienTheSanPham b ON b.MaBienThe=g.MaBienTheGoiY
+        JOIN SanPham s ON s.MaSanPham=b.MaSanPham
+        WHERE g.MaPhienThuDo=?
+        ORDER BY g.DiemSauKhiPhoiKem DESC
+        """,
+        sessionId);
   }
 }

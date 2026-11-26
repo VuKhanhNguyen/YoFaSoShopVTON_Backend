@@ -95,6 +95,13 @@ public class AiService {
         owner,
         b.variantId(),
         personId);
+    // Auto-advance matching AI outfit suggestions from CHUA_XEM -> DA_THU_THEM when customer tries the suggested variant
+    db.exec(
+        "UPDATE GoiYPhoiDo SET TrangThaiTuongTac='DA_THU_THEM'"
+            + " WHERE MaBienTheGoiY=? AND TrangThaiTuongTac='CHUA_XEM'"
+            + " AND MaPhienThuDo IN (SELECT MaPhienThuDo FROM PhienThuDoAo WHERE MaNguoiDung=?)",
+        b.variantId(),
+        owner);
     var payload = new LinkedHashMap<String, Object>();
     payload.put("sessionId", session);
     payload.put("productId", v.get("MaSanPham"));

@@ -143,13 +143,13 @@ public class AuthController {
     return auth.me(a.getName());
   }
 
-  /** Xem ảnh đại diện của người dùng theo ID (public cache 7 ngày). */
+  /** Xem ảnh đại diện của người dùng theo ID (ưu tiên R2 private, fallback ảnh cũ ở -catalog). */
   @GetMapping("/users/{id}/avatar")
   public ResponseEntity<byte[]> userAvatar(@PathVariable String id) {
     var user = db.one("SELECT AnhDaiDien FROM NguoiDung WHERE MaNguoiDung=?", id);
     String key = Db.text(user, "AnhDaiDien");
     Problem.require(!key.isEmpty(), 404, "NOT_FOUND", "Người dùng chưa có ảnh đại diện.");
-    byte[] bytes = media.catalogBytes(key);
+    byte[] bytes = media.readAvatarBytes(key);
     return ResponseEntity.ok()
         .contentType(MediaType.IMAGE_PNG)
         .contentLength(bytes.length)

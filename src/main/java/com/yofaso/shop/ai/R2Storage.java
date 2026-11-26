@@ -48,13 +48,36 @@ public class R2Storage implements AutoCloseable {
   }
 
   private String bucketFor(String key) {
-    return (key.startsWith("catalog-processing/") || key.startsWith("tryon/") || key.startsWith("chat/"))
-        ? privateBucket : bucket;
+    return (key.startsWith("catalog-processing/")
+            || key.startsWith("tryon/")
+            || key.startsWith("chat/")
+            || key.startsWith("avatars/")
+            || key.startsWith("reviews/"))
+        ? privateBucket
+        : bucket;
   }
 
   public byte[] get(String key) {
+    return getFromBucket(bucketFor(key), key);
+  }
+
+  /** Đọc từ private bucket trước; nếu 404 (avatar cũ) thì tự fallback sang public catalog bucket. */
+  public byte[] getWithCatalogFallback(String key) {
     Problem.require(client != null, 503, "R2_NOT_CONFIGURED", "Cấu hình R2 trước khi đọc file.");
-    try (var object = client.getObject(r -> r.bucket(bucketFor(key)).key(key))) {
+    String primary = bucketFor(key);
+    try {
+      return getFromBucket(primary, key);
+    } catch (Problem e) {
+      if (e.status == 404 && !primary.equals(bucket)) {
+        return getFromBucket(bucket, key);
+      }
+      throw e;
+    }
+  }
+
+  private byte[] getFromBucket(String targetBucket, String key) {
+    Problem.require(client != null, 503, "R2_NOT_CONFIGURED", "Cấu hình R2 trước khi đọc file.");
+    try (var object = client.getObject(r -> r.bucket(targetBucket).key(key))) {
       return object.readAllBytes();
     } catch (S3Exception e) {
       if (e.statusCode() == 404) throw new Problem(404, "NOT_FOUND", "Không tìm thấy ảnh trên R2.");
@@ -94,7 +117,8 @@ public class R2Storage implements AutoCloseable {
     Problem.require((key.matches("(catalog|catalog-processing)/products/[A-Za-z0-9_/\\-]+[.]png")
         || key.matches("avatars/[A-Za-z0-9_/\\-]+[.]png")
         || key.matches("tryon/[A-Za-z0-9_\\-]+/[A-Za-z0-9_\\-]+[.]png")
-        || key.matches("chat/[A-Za-z0-9_\\-]+/[A-Za-z0-9_\\-]+[.]png")) && !key.contains(".."),500,"R2_KEY_INVALID","Key R2 không hợp lệ.");
+        || key.matches("chat/[A-Za-z0-9_\\-]+/[A-Za-z0-9_\\-]+[.]png")
+        || key.matches("reviews/[A-Za-z0-9_\\-]+/[A-Za-z0-9_\\-]+[.]png")) && !key.contains(".."),500,"R2_KEY_INVALID","Key R2 không hợp lệ.");
     try {
       var request = PutObjectRequest.builder().bucket(bucketFor(key)).key(key).contentType("image/png");
       if (createOnly) request.ifNoneMatch("*");
@@ -107,9 +131,16 @@ public class R2Storage implements AutoCloseable {
   }
   public void delete(String key) {
     if (client == null || key == null || key.isBlank()) return;
+    String primary = bucketFor(key);
     try {
-      client.deleteObject(software.amazon.awssdk.services.s3.model.DeleteObjectRequest.builder().bucket(bucketFor(key)).key(key).build());
+      client.deleteObject(software.amazon.awssdk.services.s3.model.DeleteObjectRequest.builder().bucket(primary).key(key).build());
     } catch (Exception ignored) {}
+    // Dọn cả bản avatar cũ nằm ở public catalog bucket nếu có
+    if (key.startsWith("avatars/") && !primary.equals(bucket)) {
+      try {
+        client.deleteObject(software.amazon.awssdk.services.s3.model.DeleteObjectRequest.builder().bucket(bucket).key(key).build());
+      } catch (Exception ignored) {}
+    }
   }
   @jakarta.annotation.PreDestroy public void close() { if(client!=null) client.close(); }
 }

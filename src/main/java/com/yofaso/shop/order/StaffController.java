@@ -241,13 +241,32 @@ public class StaffController {
     return Map.of("updated", true);
   }
 
-  /** Tra barcode nội bộ có vị trí kệ, không mở cho khách vãng lai. */
+  /** Tra barcode/SKU/MaBienThe/MaSanPham nội bộ có vị trí kệ và ảnh sản phẩm. */
   @GetMapping("/staff/variants/by-sku")
   @PreAuthorize("hasAnyRole('SHOP_ADMIN','STAFF_CASHIER','STAFF_WAREHOUSE')")
   public Map<String, Object> barcode(@RequestParam String sku) {
-    return db.one(
-        "SELECT b.MaBienThe AS variantId,b.MaSanPham AS productId,b.MaQuanLyHangHoa AS sku,b.KichCo AS size,b.TenMau AS colorName,b.MaMauSac AS colors,b.GiaNiemYet AS price,b.GiaKhuyenMai AS salePrice,b.SoLuongTonKho AS stock,b.ViTriGiaKe AS shelf,b.TrangThai AS status,p.TenSanPham AS productName,p.TenSanPham AS name,p.MaDanhMuc AS categoryId FROM BienTheSanPham b JOIN SanPham p ON p.MaSanPham=b.MaSanPham WHERE b.MaQuanLyHangHoa=? OR b.MaBienThe=?",
-        sku, sku);
+    String clean = sku == null ? "" : sku.trim();
+    String selectSql =
+        "SELECT b.MaBienThe AS variantId,b.MaSanPham AS productId,b.MaQuanLyHangHoa AS sku,b.KichCo AS size,"
+            + "b.TenMau AS colorName,b.MaMauSac AS colors,b.GiaNiemYet AS price,b.GiaKhuyenMai AS salePrice,"
+            + "b.SoLuongTonKho AS stock,b.ViTriGiaKe AS shelf,b.TrangThai AS status,"
+            + "p.TenSanPham AS productName,p.TenSanPham AS name,p.MaDanhMuc AS categoryId,p.PhanLoaiVTON AS vtonCategory,"
+            + "(SELECT CONCAT('/api/v1/catalog/images/', h.MaHinhAnh, '/content?kind=original') FROM HinhAnhSanPham h"
+            + " WHERE h.MaSanPham=p.MaSanPham AND (h.MaMauSac=b.MaMauSac OR h.LaAnhDaiDien=1)"
+            + " ORDER BY (h.MaMauSac=b.MaMauSac) DESC, h.LaAnhDaiDien DESC, h.ThuTuHienThi ASC LIMIT 1) AS productImageUrl "
+            + "FROM BienTheSanPham b JOIN SanPham p ON p.MaSanPham=b.MaSanPham ";
+    var exact = db.rows(selectSql + "WHERE b.MaQuanLyHangHoa=? OR b.MaBienThe=? LIMIT 1", clean, clean);
+    if (!exact.isEmpty()) {
+      var found = new LinkedHashMap<>(exact.getFirst());
+      String pid = Db.text(found, "productId");
+      found.put("variants", db.rows(selectSql + "WHERE b.MaSanPham=? ORDER BY b.SoLuongTonKho DESC, b.MaBienThe", pid));
+      return found;
+    }
+    var byProduct = db.rows(selectSql + "WHERE b.MaSanPham=? OR UPPER(p.TenSanPham) LIKE ? ORDER BY b.SoLuongTonKho DESC, b.MaBienThe LIMIT 20", clean, "%" + clean.toUpperCase(Locale.ROOT) + "%");
+    Problem.require(!byProduct.isEmpty(), 404, "NOT_FOUND", "Không tìm thấy mã sản phẩm hoặc SKU phù hợp.");
+    var primary = new LinkedHashMap<>(byProduct.getFirst());
+    primary.put("variants", byProduct);
+    return primary;
   }
 
   /** Khách tại quầy chỉ tra bằng số điện thoại chính xác, không liệt kê cả database. */
@@ -255,8 +274,9 @@ public class StaffController {
   @PreAuthorize("hasAnyRole('SHOP_ADMIN','STAFF_CASHIER')")
   public Map<String, Object> customer(@RequestParam String phone) {
     return db.one(
-        "SELECT MaNguoiDung AS userId,HoVaTen AS fullName,DiemTichLuy AS points,HangThanhVien AS"
-            + " membership FROM NguoiDung WHERE SoDienThoai=?",
+        "SELECT MaNguoiDung AS userId,HoVaTen AS fullName,SoDienThoai AS phone,Email AS email,"
+            + "NgaySinh AS birthday,DiemTichLuy AS points,HangThanhVien AS membership"
+            + " FROM NguoiDung WHERE SoDienThoai=?",
         phone);
   }
 
@@ -706,6 +726,11 @@ public class StaffController {
         409,
         "SHIFT_STATE_INVALID",
         "Ca không mở hoặc không thuộc bạn.");
+    notifyAdmins(
+        "Ca POS #" + id + " chờ duyệt kết ca",
+        "Thu ngân " + a.getName() + " vừa đóng ca và khai báo tiền két kiểm đếm " + b.amount().setScale(0, java.math.RoundingMode.HALF_UP) + "đ.",
+        "HE_THONG",
+        "/admin");
     return shift(id, a);
   }
 
@@ -838,23 +863,53 @@ public class StaffController {
     return orders.markPaidOnline(id, body.transactionRef().trim());
   }
 
-  /** Danh sách ca làm việc thu ngân POS cho chủ shop theo dõi và duyệt bàn giao két. */
+  /** Danh sách ca làm việc thu ngân POS cho chủ shop theo dõi và duyệt bàn giao két (kèm cashSales & expectedCash thật). */
   @GetMapping("/admin/shifts")
   @PreAuthorize("hasRole('SHOP_ADMIN')")
   public List<Map<String, Object>> adminShifts(
       @RequestParam(defaultValue = "0") int page,
       @RequestParam(defaultValue = "50") int size) {
-    return db.rows(
-        "SELECT c.MaCaLamViec AS shiftId, c.MaThuNgan AS cashierId, "
-            + "COALESCE(u.HoVaTen, u.TenDangNhap) AS cashierName, "
-            + "c.ThoiGianMoCa AS openedAt, c.ThoiGianDongCa AS closedAt, "
-            + "c.TienMatDauCa AS openingCash, c.TienMatKiemDemThucTe AS countedCash, "
-            + "c.TrangThaiCa AS status, c.GhiChuKetCa AS note "
-            + "FROM CaLamViecThuNgan c "
-            + "LEFT JOIN NguoiDung u ON u.MaNguoiDung = c.MaThuNgan "
-            + "ORDER BY c.ThoiGianMoCa DESC LIMIT ? OFFSET ?",
-        size,
-        Db.offset(page, size));
+    var rows =
+        db.rows(
+            "SELECT c.MaCaLamViec AS shiftId, c.MaThuNgan AS cashierId, "
+                + "COALESCE(u.HoVaTen, u.TenDangNhap) AS cashierName, "
+                + "c.ThoiGianMoCa AS openedAt, c.ThoiGianDongCa AS closedAt, "
+                + "c.TienMatDauCa AS openingCash, c.TienMatKiemDemThucTe AS countedCash, "
+                + "c.TrangThaiCa AS status, c.GhiChuKetCa AS note "
+                + "FROM CaLamViecThuNgan c "
+                + "LEFT JOIN NguoiDung u ON u.MaNguoiDung = c.MaThuNgan "
+                + "ORDER BY c.ThoiGianMoCa DESC LIMIT ? OFFSET ?",
+            size,
+            Db.offset(page, size));
+    for (var row : rows) {
+      String sid = Db.text(row, "shiftId");
+      var grossRow =
+          db.one(
+              "SELECT COALESCE(SUM(ct.SoLuong * ct.DonGiaLucDatHang), 0) AS gross"
+                  + " FROM ChiTietDonHang ct JOIN DonHang d ON d.MaDonHang = ct.MaDonHang"
+                  + " WHERE d.MaThuNgan = (SELECT MaThuNgan FROM CaLamViecThuNgan WHERE MaCaLamViec = ?)"
+                  + " AND d.KenhBanHang = 'TAI_QUAY_POS' AND d.PhuongThucThanhToan = 'TIEN_MAT_TAI_QUAY'"
+                  + " AND d.NgayTao >= (SELECT ThoiGianMoCa FROM CaLamViecThuNgan WHERE MaCaLamViec = ?)"
+                  + " AND d.NgayTao < COALESCE((SELECT ThoiGianDongCa FROM CaLamViecThuNgan WHERE MaCaLamViec = ?), CURRENT_TIMESTAMP(6))"
+                  + " AND d.TrangThaiDonHang = 'HOAN_TAT'",
+              sid, sid, sid);
+      BigDecimal discounts =
+          Db.money(
+              db.one(
+                  "SELECT COALESCE(SUM(TienGiamGia), 0) AS amount FROM DonHang d"
+                      + " WHERE d.MaThuNgan = (SELECT MaThuNgan FROM CaLamViecThuNgan WHERE MaCaLamViec = ?)"
+                      + " AND d.KenhBanHang = 'TAI_QUAY_POS' AND d.PhuongThucThanhToan = 'TIEN_MAT_TAI_QUAY'"
+                      + " AND d.NgayTao >= (SELECT ThoiGianMoCa FROM CaLamViecThuNgan WHERE MaCaLamViec = ?)"
+                      + " AND d.NgayTao < COALESCE((SELECT ThoiGianDongCa FROM CaLamViecThuNgan WHERE MaCaLamViec = ?), CURRENT_TIMESTAMP(6))"
+                      + " AND d.TrangThaiDonHang = 'HOAN_TAT'",
+                  sid, sid, sid),
+              "amount");
+      BigDecimal cashSales = Db.money(grossRow, "gross").subtract(discounts);
+      BigDecimal expectedCash = Db.money(row, "openingCash").add(cashSales);
+      row.put("cashSales", cashSales);
+      row.put("expectedCash", expectedCash);
+    }
+    return rows;
   }
 
   /** Yêu cầu đếm lại / từ chối duyệt ca. */
@@ -1085,6 +1140,200 @@ public class StaffController {
     result.put("completedOrders", completedOrders);
     result.put("returnedOrders", returnedOrders);
     return result;
+  }
+
+  /** Phân tích VTON & AI chuyển đổi thực tế từ MySQL (PhienThuDoAo, GoiYPhoiDo, DonHang, ChiTietDonHang). */
+  @GetMapping("/admin/reports/vton")
+  @PreAuthorize("hasRole('SHOP_ADMIN')")
+  public Map<String, Object> vtonReport(@RequestParam(defaultValue = "30") int days) {
+    int windowDays = Math.max(1, Math.min(365, days));
+    var sessionSummary =
+        db.one(
+            "SELECT COUNT(*) AS totalSessions,"
+                + " SUM(CASE WHEN TrangThaiPhien='THANH_CONG' THEN 1 ELSE 0 END) AS completedSessions,"
+                + " SUM(CASE WHEN TrangThaiPhien='THAT_BAI' THEN 1 ELSE 0 END) AS failedSessions,"
+                + " SUM(CASE WHEN DiemTongThe IS NOT NULL THEN 1 ELSE 0 END) AS scoredSessions,"
+                + " COALESCE(ROUND(AVG(DiemTongThe), 1), 0) AS avgScore"
+                + " FROM PhienThuDoAo"
+                + " WHERE ThoiGianKhoiTao >= CURRENT_TIMESTAMP - INTERVAL ? DAY",
+            windowDays);
+
+    long totalSessions = ((Number) sessionSummary.getOrDefault("totalSessions", 0)).longValue();
+    long completedSessions =
+        sessionSummary.get("completedSessions") == null
+            ? 0L
+            : ((Number) sessionSummary.get("completedSessions")).longValue();
+    long failedSessions =
+        sessionSummary.get("failedSessions") == null
+            ? 0L
+            : ((Number) sessionSummary.get("failedSessions")).longValue();
+    long scoredSessions =
+        sessionSummary.get("scoredSessions") == null
+            ? 0L
+            : ((Number) sessionSummary.get("scoredSessions")).longValue();
+
+    var interactionRows =
+        db.rows(
+            "SELECT g.TrangThaiTuongTac AS status, COUNT(*) AS cnt"
+                + " FROM GoiYPhoiDo g JOIN PhienThuDoAo p ON p.MaPhienThuDo = g.MaPhienThuDo"
+                + " WHERE p.ThoiGianKhoiTao >= CURRENT_TIMESTAMP - INTERVAL ? DAY"
+                + " GROUP BY g.TrangThaiTuongTac",
+            windowDays);
+    var interactions = new LinkedHashMap<String, Long>();
+    interactions.put("CHUA_XEM", 0L);
+    interactions.put("DA_THU_THEM", 0L);
+    interactions.put("DA_THEM_GIO_HANG", 0L);
+    interactions.put("DA_MUA", 0L);
+    for (var ir : interactionRows) {
+      interactions.put(Db.text(ir, "status"), ((Number) ir.get("cnt")).longValue());
+    }
+    long interactedCount =
+        interactions.get("DA_THU_THEM")
+            + interactions.get("DA_THEM_GIO_HANG")
+            + interactions.get("DA_MUA");
+
+    var abRows =
+        db.rows(
+            "SELECT CASE WHEN EXISTS (SELECT 1 FROM ChiTietDonHang c WHERE c.MaDonHang=d.MaDonHang AND c.MaPhienThuDo IS NOT NULL)"
+                + " THEN 'VTON' ELSE 'NON_VTON' END AS grp,"
+                + " COUNT(*) AS orderCount,"
+                + " SUM(CASE WHEN d.TrangThaiDonHang='HOAN_TAT' THEN 1 ELSE 0 END) AS completedCount,"
+                + " SUM(CASE WHEN d.TrangThaiDonHang='TRA_HANG' THEN 1 ELSE 0 END) AS returnedCount,"
+                + " COALESCE(SUM(CASE WHEN d.TrangThaiDonHang='HOAN_TAT' THEN (COALESCE(ct.subtotal,0) + d.PhiVanChuyen - d.TienGiamGia) ELSE 0 END), 0) AS revenue"
+                + " FROM DonHang d"
+                + " LEFT JOIN (SELECT MaDonHang, SUM(SoLuong * DonGiaLucDatHang) AS subtotal FROM ChiTietDonHang GROUP BY MaDonHang) ct ON ct.MaDonHang = d.MaDonHang"
+                + " WHERE d.NgayTao >= CURRENT_TIMESTAMP - INTERVAL ? DAY AND d.TrangThaiDonHang <> 'DA_HUY'"
+                + " GROUP BY grp",
+            windowDays);
+    Map<String, Object> vtonAb = emptyAbBucket();
+    Map<String, Object> nonVtonAb = emptyAbBucket();
+    for (var row : abRows) {
+      long ordersCount = ((Number) row.getOrDefault("orderCount", 0)).longValue();
+      long compCount = row.get("completedCount") == null ? 0L : ((Number) row.get("completedCount")).longValue();
+      long retCount = row.get("returnedCount") == null ? 0L : ((Number) row.get("returnedCount")).longValue();
+      BigDecimal rev = Db.money(row, "revenue");
+      double retRate = ordersCount > 0 ? Math.round(((double) retCount / ordersCount) * 1000.0) / 10.0 : 0.0;
+      long aov = compCount > 0 ? rev.divide(BigDecimal.valueOf(compCount), 0, java.math.RoundingMode.HALF_UP).longValue() : 0L;
+      var bucket = new LinkedHashMap<String, Object>();
+      bucket.put("orderCount", ordersCount);
+      bucket.put("completedCount", compCount);
+      bucket.put("returnedCount", retCount);
+      bucket.put("returnRate", retRate);
+      bucket.put("revenue", rev);
+      bucket.put("avgOrderValue", aov);
+      if ("VTON".equals(row.get("grp"))) vtonAb = bucket;
+      else nonVtonAb = bucket;
+    }
+
+    long vtonOrdersCount = ((Number) vtonAb.get("orderCount")).longValue();
+    var crossSellRow =
+        db.one(
+            "SELECT COUNT(DISTINCT ct.MaChiTietDonHang) AS lineCount,"
+                + " COALESCE(SUM(ct.SoLuong * ct.DonGiaLucDatHang), 0) AS revenue"
+                + " FROM ChiTietDonHang ct"
+                + " JOIN DonHang d ON d.MaDonHang = ct.MaDonHang"
+                + " WHERE d.TrangThaiDonHang='HOAN_TAT'"
+                + " AND d.NgayTao >= CURRENT_TIMESTAMP - INTERVAL ? DAY"
+                + " AND ct.MaBienThe IN (SELECT DISTINCT MaBienTheGoiY FROM GoiYPhoiDo WHERE TrangThaiTuongTac='DA_MUA')",
+            windowDays);
+
+    var scoreDistRow =
+        db.one(
+            "SELECT"
+                + " COALESCE(SUM(CASE WHEN DiemTongThe >= 85 THEN 1 ELSE 0 END), 0) AS recommended,"
+                + " COALESCE(SUM(CASE WHEN DiemTongThe >= 70 AND DiemTongThe < 85 THEN 1 ELSE 0 END), 0) AS acceptable,"
+                + " COALESCE(SUM(CASE WHEN DiemTongThe >= 50 AND DiemTongThe < 70 THEN 1 ELSE 0 END), 0) AS needsAdjustment,"
+                + " COALESCE(SUM(CASE WHEN DiemTongThe < 50 THEN 1 ELSE 0 END), 0) AS notRecommended"
+                + " FROM PhienThuDoAo"
+                + " WHERE DiemTongThe IS NOT NULL AND ThoiGianKhoiTao >= CURRENT_TIMESTAMP - INTERVAL ? DAY",
+            windowDays);
+
+    var topCombos =
+        db.rows(
+            "SELECT p.MaBienThe AS mainVariantId, g.MaBienTheGoiY AS recVariantId,"
+                + " s1.TenSanPham AS mainProductName, s2.TenSanPham AS recProductName,"
+                + " COALESCE(b1.GiaKhuyenMai, b1.GiaNiemYet) AS mainPrice,"
+                + " COALESCE(b2.GiaKhuyenMai, b2.GiaNiemYet) AS recPrice,"
+                + " ROUND(AVG(g.DiemSauKhiPhoiKem), 0) AS avgProjectedScore,"
+                + " COUNT(*) AS suggestedCount,"
+                + " SUM(CASE WHEN g.TrangThaiTuongTac='DA_MUA' THEN 1 ELSE 0 END) AS purchasedCount,"
+                + " (SELECT CONCAT('/api/v1/catalog/images/', h.MaHinhAnh, '/content?kind=original') FROM HinhAnhSanPham h WHERE h.MaSanPham=s1.MaSanPham ORDER BY h.LaAnhDaiDien DESC, h.ThuTuHienThi ASC LIMIT 1) AS mainImageUrl,"
+                + " (SELECT CONCAT('/api/v1/catalog/images/', h.MaHinhAnh, '/content?kind=original') FROM HinhAnhSanPham h WHERE h.MaSanPham=s2.MaSanPham ORDER BY h.LaAnhDaiDien DESC, h.ThuTuHienThi ASC LIMIT 1) AS recImageUrl"
+                + " FROM GoiYPhoiDo g"
+                + " JOIN PhienThuDoAo p ON p.MaPhienThuDo = g.MaPhienThuDo"
+                + " JOIN BienTheSanPham b1 ON b1.MaBienThe = p.MaBienThe"
+                + " JOIN SanPham s1 ON s1.MaSanPham = b1.MaSanPham"
+                + " JOIN BienTheSanPham b2 ON b2.MaBienThe = g.MaBienTheGoiY"
+                + " JOIN SanPham s2 ON s2.MaSanPham = b2.MaSanPham"
+                + " WHERE p.ThoiGianKhoiTao >= CURRENT_TIMESTAMP - INTERVAL ? DAY"
+                + " GROUP BY p.MaBienThe, g.MaBienTheGoiY, s1.TenSanPham, s2.TenSanPham, b1.GiaKhuyenMai, b1.GiaNiemYet, b2.GiaKhuyenMai, b2.GiaNiemYet, s1.MaSanPham, s2.MaSanPham"
+                + " ORDER BY purchasedCount DESC, suggestedCount DESC, avgProjectedScore DESC LIMIT 5",
+            windowDays);
+
+    var funnel = new ArrayList<Map<String, Object>>();
+    funnel.add(Map.of("label", "Phiên thử đồ AI khởi tạo", "count", totalSessions, "note", "100% phiên trong " + windowDays + " ngày"));
+    funnel.add(Map.of("label", "Render VTON thành công", "count", completedSessions, "note", pct(completedSessions, totalSessions) + "% phiên khởi tạo"));
+    funnel.add(Map.of("label", "Có chấm điểm thẩm mỹ", "count", scoredSessions, "note", pct(scoredSessions, completedSessions) + "% phiên thành công"));
+    funnel.add(Map.of("label", "Tương tác gợi ý phối đồ", "count", interactedCount, "note", "Thử thêm / Thêm giỏ / Đã mua"));
+    funnel.add(Map.of("label", "Chốt đơn gắn phiên VTON", "count", vtonOrdersCount, "note", pct(vtonOrdersCount, completedSessions) + "% phiên hoàn tất"));
+
+    var res = new LinkedHashMap<String, Object>();
+    res.put("periodDays", windowDays);
+    res.put("totalSessions", totalSessions);
+    res.put("completedSessions", completedSessions);
+    res.put("failedSessions", failedSessions);
+    res.put("scoredSessions", scoredSessions);
+    res.put("avgScore", sessionSummary.getOrDefault("avgScore", 0));
+    res.put("funnel", funnel);
+    res.put("interactions", interactions);
+    res.put("abComparison", Map.of("vton", vtonAb, "nonVton", nonVtonAb));
+    res.put(
+        "crossSell",
+        Map.of(
+            "purchasedSuggestions", interactions.get("DA_MUA"),
+            "orderLines", crossSellRow.getOrDefault("lineCount", 0),
+            "revenue", crossSellRow.getOrDefault("revenue", BigDecimal.ZERO)));
+    res.put("scoreDistribution", scoreDistRow);
+    res.put("topCombos", topCombos);
+    return res;
+  }
+
+  private static Map<String, Object> emptyAbBucket() {
+    var m = new LinkedHashMap<String, Object>();
+    m.put("orderCount", 0L);
+    m.put("completedCount", 0L);
+    m.put("returnedCount", 0L);
+    m.put("returnRate", 0.0);
+    m.put("revenue", BigDecimal.ZERO);
+    m.put("avgOrderValue", 0L);
+    return m;
+  }
+
+  private static double pct(long num, long den) {
+    if (den <= 0) return 0.0;
+    return Math.round(((double) num / den) * 1000.0) / 10.0;
+  }
+
+  private void notifyAdmins(String title, String content, String type, String link) {
+    try {
+      var admins =
+          db.rows(
+              "SELECT DISTINCT u.MaNguoiDung AS id FROM NguoiDung u"
+                  + " JOIN NguoiDung_VaiTro nv ON nv.MaNguoiDung=u.MaNguoiDung"
+                  + " JOIN VaiTro v ON v.MaVaiTro=nv.MaVaiTro"
+                  + " WHERE v.TenVaiTro='ROLE_SHOP_ADMIN' AND u.TrangThaiHoatDong='HOAT_DONG'");
+      for (var admin : admins) {
+        db.exec(
+            "INSERT INTO ThongBao(MaThongBao,MaNguoiDung,TieuDe,NoiDung,LoaiThongBao,LienKetDieuHuong)"
+                + " VALUES(?,?,?,?,?,?)",
+            Db.id("TB"),
+            Db.text(admin, "id"),
+            title,
+            content,
+            type,
+            link);
+      }
+    } catch (Exception ignored) {}
   }
 
   /** Dashboard doanh thu snapshot của các đơn hoàn tất; chưa coi là báo cáo kế toán. */

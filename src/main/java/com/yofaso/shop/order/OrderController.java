@@ -14,7 +14,14 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/v1")
 public class OrderController {
   @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
-  public record Item(@NotBlank @Size(max = 20) String variantId, @Min(1) @Max(99) int quantity) {}
+  public record Item(
+      @NotBlank @Size(max = 20) String variantId,
+      @Min(1) @Max(99) int quantity,
+      @Size(max = 20) String sessionId) {
+    public Item(String variantId, int quantity) {
+      this(variantId, quantity, null);
+    }
+  }
 
   @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
   public record Checkout(
@@ -24,7 +31,18 @@ public class OrderController {
       @Size(max = 20) String customerId,
       @DecimalMin("0") BigDecimal cashReceived,
       @Pattern(regexp = "^(COD_TIEN_MAT_KHI_NHAN|VIETQR_CHUYEN_KHOAN_ONLINE|COD|VIETQR)$")
-          String paymentMethod) {}
+          String paymentMethod,
+      @Size(max = 20) String sessionId) {
+    public Checkout(
+        String addressId,
+        List<Item> items,
+        String voucher,
+        String customerId,
+        BigDecimal cashReceived,
+        String paymentMethod) {
+      this(addressId, items, voucher, customerId, cashReceived, paymentMethod, null);
+    }
+  }
 
   private final Db db;
   private final OrderService orders;
@@ -89,6 +107,13 @@ public class OrderController {
         gid,
         b.variantId(),
         b.quantity());
+    // Auto-advance matching AI outfit suggestions when customer adds recommended SKU to cart
+    db.exec(
+        "UPDATE GoiYPhoiDo SET TrangThaiTuongTac='DA_THEM_GIO_HANG'"
+            + " WHERE MaBienTheGoiY=? AND TrangThaiTuongTac IN ('CHUA_XEM','DA_THU_THEM')"
+            + " AND MaPhienThuDo IN (SELECT MaPhienThuDo FROM PhienThuDoAo WHERE MaNguoiDung=?)",
+        b.variantId(),
+        a.getName());
     return cart(a);
   }
 
@@ -151,18 +176,16 @@ public class OrderController {
             + " SoLuongDaDung<SoLuongPhatHanh");
   }
 
-  /** Xem giảm giá theo giá server của SKU, chưa tiêu lượt voucher. */
+  /** Xem giảm giá Combo VTON -5% + Voucher + phí ship theo giá server, chưa tiêu lượt voucher. */
   @PostMapping("/promotions/quote")
-  public Map<String, Object> quote(@Valid @RequestBody Checkout b) {
-    BigDecimal subtotal = BigDecimal.ZERO;
-    for (var item : b.items()) {
-      var v =
-          db.one(
-              "SELECT COALESCE(GiaKhuyenMai,GiaNiemYet) AS price FROM BienTheSanPham WHERE"
-                  + " MaBienThe=?",
-              item.variantId());
-      subtotal = subtotal.add(Db.money(v, "price").multiply(BigDecimal.valueOf(item.quantity())));
-    }
-    return orders.discount(b.voucher(), subtotal, false);
+  public Map<String, Object> quote(@Valid @RequestBody Checkout b, Authentication a) {
+    boolean isPosStaff =
+        a != null
+            && b.addressId() == null
+            && a.getAuthorities().stream()
+                .anyMatch(
+                    g -> Set.of("ROLE_SHOP_ADMIN", "ROLE_STAFF_CASHIER").contains(g.getAuthority()));
+    String customerId = isPosStaff ? b.customerId() : (a != null ? a.getName() : null);
+    return orders.quoteOrder(customerId, b.items(), b.voucher(), b.sessionId(), isPosStaff, false);
   }
 }

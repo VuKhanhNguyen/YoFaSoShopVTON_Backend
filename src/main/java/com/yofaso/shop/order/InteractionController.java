@@ -2,6 +2,7 @@ package com.yofaso.shop.order;
 
 import com.yofaso.shop.ai.MediaService;
 import com.yofaso.shop.common.*;
+import com.yofaso.shop.notification.NotificationService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import java.io.IOException;
@@ -16,7 +17,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-/** Đánh giá verified buyer (kèm ảnh R2 private kiểm duyệt) và thông báo riêng của người dùng. */
+/** Đánh giá verified buyer (kèm ảnh R2 private kiểm duyệt). */
 @RestController
 @RequestMapping("/api/v1")
 public class InteractionController {
@@ -31,11 +32,13 @@ public class InteractionController {
 
   private final Db db;
   private final MediaService media;
+  private final NotificationService notifications;
 
-  /** Nhận DB và MediaService để kiểm tra giao dịch mua và lưu/đọc ảnh đánh giá trên R2 private. */
-  public InteractionController(Db db, MediaService media) {
+  /** Nhận DB, MediaService và NotificationService để quản lý đánh giá và gửi thông báo đa kênh. */
+  public InteractionController(Db db, MediaService media, NotificationService notifications) {
     this.db = db;
     this.media = media;
+    this.notifications = notifications;
   }
 
   /** Hiển thị đánh giá đã duyệt cho mọi khách; bài CHO_DUYET chỉ hiện riêng cho chính chủ đăng bài. */
@@ -149,10 +152,11 @@ public class InteractionController {
       throw e;
     }
 
-    notifyAdmins(
+    notifications.notifyAdmins(
         "Đánh giá mới chờ kiểm duyệt (" + stars + "★)",
         "Khách hàng vừa gửi đánh giá cho \"" + productName + "\" (" + id + "). Vui lòng kiểm duyệt để hiển thị.",
-        "/admin/dashboard");
+        "HE_THONG",
+        "/admin/dashboard?tab=operations&view=reviews");
 
     var resp = new LinkedHashMap<String, Object>();
     resp.put("reviewId", id);
@@ -248,62 +252,8 @@ public class InteractionController {
       String body = replyText != null
           ? "Shop vừa phản hồi đánh giá cho \"" + productName + "\": " + replyText
           : "Cảm ơn bạn đã đánh giá \"" + productName + "\". Bài viết hiện đã hiển thị công khai.";
-      try {
-        db.exec(
-            "INSERT INTO ThongBao(MaThongBao,MaNguoiDung,TieuDe,NoiDung,LoaiThongBao,LienKetDieuHuong) "
-                + "VALUES(?,?,?,?,'HE_THONG',?)",
-            Db.id("TB"), owner, title, body, "/product/" + productId);
-      } catch (Exception ignored) {}
+      notifications.notifyUser(owner, title, body, "HE_THONG", "/product/" + productId);
     }
     return Map.of("updated", true, "status", b.status());
-  }
-
-  private void notifyAdmins(String title, String body, String link) {
-    try {
-      var admins = db.rows(
-          "SELECT DISTINCT r.MaNguoiDung FROM NguoiDung_VaiTro r "
-              + "JOIN VaiTro v ON v.MaVaiTro = r.MaVaiTro "
-              + "JOIN NguoiDung u ON u.MaNguoiDung = r.MaNguoiDung "
-              + "WHERE v.TenVaiTro = 'ROLE_SHOP_ADMIN' AND u.TrangThaiHoatDong = 'HOAT_DONG'");
-      for (var adm : admins) {
-        db.exec(
-            "INSERT INTO ThongBao(MaThongBao,MaNguoiDung,TieuDe,NoiDung,LoaiThongBao,LienKetDieuHuong) "
-                + "VALUES(?,?,?,?,'HE_THONG',?)",
-            Db.id("TB"), Db.text(adm, "MaNguoiDung"), title, body, link);
-      }
-    } catch (Exception ignored) {}
-  }
-
-  /** Thông báo của người đăng nhập, hỗ trợ lọc chưa đọc. */
-  @GetMapping("/notifications")
-  public List<Map<String, Object>> notifications(
-      Authentication a,
-      @RequestParam(defaultValue = "false") boolean unread,
-      @RequestParam(defaultValue = "0") int page,
-      @RequestParam(defaultValue = "20") int size) {
-    return db.rows(
-        "SELECT MaThongBao AS notificationId,TieuDe AS title,NoiDung AS message,LoaiThongBao AS"
-            + " type,LienKetDieuHuong AS link,DaDoc AS readStatus,NgayTao AS createdAt FROM"
-            + " ThongBao WHERE MaNguoiDung=? AND (?=FALSE OR DaDoc=0) ORDER BY NgayTao DESC LIMIT ?"
-            + " OFFSET ?",
-        a.getName(),
-        unread,
-        size,
-        Db.offset(page, size));
-  }
-
-  /** Đánh dấu đã đọc có ownership, không sửa nội dung thông báo. */
-  @PostMapping("/notifications/{id}/read")
-  public Map<String, Object> read(Authentication a, @PathVariable String id) {
-    db.one("SELECT MaThongBao FROM ThongBao WHERE MaThongBao=? AND MaNguoiDung=?", id, a.getName());
-    db.exec("UPDATE ThongBao SET DaDoc=1 WHERE MaThongBao=?", id);
-    return Map.of("read", true);
-  }
-
-  /** Đánh dấu toàn bộ thông báo của tài khoản hiện tại là đã đọc. */
-  @PostMapping("/notifications/read-all")
-  public Map<String, Object> readAll(Authentication a) {
-    int updated = db.exec("UPDATE ThongBao SET DaDoc=1 WHERE MaNguoiDung=? AND DaDoc=0", a.getName());
-    return Map.of("updated", updated);
   }
 }

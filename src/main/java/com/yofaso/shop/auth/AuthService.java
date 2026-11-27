@@ -29,13 +29,19 @@ public class AuthService {
   private final PasswordEncoder passwords;
   private final JwtEncoder encoder;
   private final String catalogBase;
+  private final com.yofaso.shop.notification.NotificationService notifications;
 
-  /** Nhận các thành phần mã hóa do Spring cung cấp. */
-  public AuthService(Db db, PasswordEncoder passwords, JwtEncoder encoder,
+  /** Nhận các thành phần mã hóa và dịch vụ thông báo do Spring cung cấp. */
+  public AuthService(
+      Db db,
+      PasswordEncoder passwords,
+      JwtEncoder encoder,
+      com.yofaso.shop.notification.NotificationService notifications,
       @org.springframework.beans.factory.annotation.Value("${app.catalog.public-base-url:}") String catalogBase) {
     this.db = db;
     this.passwords = passwords;
     this.encoder = encoder;
+    this.notifications = notifications;
     this.catalogBase = catalogBase == null ? "" : catalogBase.replaceAll("/+$", "");
   }
 
@@ -247,11 +253,19 @@ public class AuthService {
   /** Tự động tặng 2 voucher chào mừng (VTON5, FREESHIP) cho tài khoản mới đăng ký. */
   public void grantWelcomeVouchers(String userId) {
     try {
-      db.exec(
+      int granted = db.exec(
           "INSERT IGNORE INTO NguoiDung_KhuyenMai (MaNguoiDung, MaKhuyenMai, NgayThuThap, TrangThai) "
               + "SELECT ?, MaKhuyenMai, CURRENT_TIMESTAMP, 'CHUA_DUNG' FROM KhuyenMai "
               + "WHERE MaPhieuGiamGia IN ('VTON5', 'FREESHIP') AND TrangThai='DANG_DIEN_RA'",
           userId);
+      if (granted > 0 && notifications != null) {
+        notifications.notifyUser(
+            userId,
+            "Chào mừng đến YoFaSo Atelier!",
+            "Tặng bạn bộ voucher chào mừng VTON5 & FREESHIP trong ví ưu đãi. Hãy khám phá và ướm thử đồ AI ngay hôm nay!",
+            "KHUYEN_MAI",
+            "/promotions");
+      }
     } catch (Exception ignored) {
       // Không chặn luồng đăng ký nếu bảng khuyến mãi chưa sẵn sàng
     }
@@ -260,7 +274,7 @@ public class AuthService {
   /** Tự động kiểm tra và tặng voucher BIRTHDAY15 nếu hôm nay là sinh nhật của user và trong năm chưa nhận. */
   public void checkAndGrantBirthdayVoucher(String userId) {
     try {
-      db.exec(
+      int granted = db.exec(
           "INSERT INTO NguoiDung_KhuyenMai (MaNguoiDung, MaKhuyenMai, NgayThuThap, TrangThai) "
               + "SELECT u.MaNguoiDung, km.MaKhuyenMai, CURRENT_TIMESTAMP, 'CHUA_DUNG' "
               + "FROM NguoiDung u "
@@ -279,6 +293,14 @@ public class AuthService {
               + "        AND YEAR(ndkm.NgayThuThap) = YEAR(CURRENT_DATE)"
               + "  )",
           userId);
+      if (granted > 0 && notifications != null) {
+        notifications.notifyUser(
+            userId,
+            "Chúc mừng sinh nhật từ YoFaSo!",
+            "YoFaSo gửi tặng bạn mã ưu đãi sinh nhật BIRTHDAY15 giảm 15% trong ví voucher. Chúc bạn một ngày thật rực rỡ!",
+            "KHUYEN_MAI",
+            "/promotions");
+      }
     } catch (Exception ignored) {
       // Không chặn luồng thông tin cá nhân
     }

@@ -28,11 +28,12 @@ class IdGenerationTest {
 
   @Test
   void testPrefixMapCoverage() {
-    // 19 bảng có khóa chính đơn trong ERD 22 bảng (gồm TinNhanTrucTuyen - TN và LienKetDangNhap - LK)
-    assertEquals(19, Db.PREFIX_MAP.size());
+    // 20 bảng có khóa chính đơn trong ERD 23 bảng (gồm TinNhanTrucTuyen - TN, LienKetDangNhap - LK, ThietBiThongBao - DT)
+    assertEquals(20, Db.PREFIX_MAP.size());
     assertTrue(Db.PREFIX_MAP.containsKey("DC"));
     assertTrue(Db.PREFIX_MAP.containsKey("ND"));
     assertTrue(Db.PREFIX_MAP.containsKey("LK"));
+    assertTrue(Db.PREFIX_MAP.containsKey("DT"));
     assertTrue(Db.PREFIX_MAP.containsKey("DH"));
     assertTrue(Db.PREFIX_MAP.containsKey("SP"));
     assertTrue(Db.PREFIX_MAP.containsKey("BT"));

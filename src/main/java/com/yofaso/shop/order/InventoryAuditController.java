@@ -3,6 +3,7 @@ package com.yofaso.shop.order;
 import com.yofaso.shop.common.Db;
 import com.yofaso.shop.common.Problem;
 import com.yofaso.shop.common.RuntimeState;
+import com.yofaso.shop.notification.NotificationService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import java.time.Instant;
@@ -18,11 +19,14 @@ public class InventoryAuditController {
   private final Db db;
   private final RuntimeState runtime;
   private final InventoryService inventory;
+  private final NotificationService notifications;
 
-  public InventoryAuditController(Db db, RuntimeState runtime, InventoryService inventory) {
+  public InventoryAuditController(
+      Db db, RuntimeState runtime, InventoryService inventory, NotificationService notifications) {
     this.db = db;
     this.runtime = runtime;
     this.inventory = inventory;
+    this.notifications = notifications;
   }
 
   public record Count(@NotBlank @Size(max = 20) String variantId,
@@ -45,23 +49,11 @@ public class InventoryAuditController {
     var draft = RuntimeState.row("id", id, "reason", body.reason(), "author", actor.getName(),
         "createdAt", Instant.now().toString(), "status", "PENDING", "lines", new ArrayList<>(lines.values()));
     runtime.put("inventoryaudits", id, draft);
-    try {
-      var admins =
-          db.rows(
-              "SELECT DISTINCT u.MaNguoiDung AS id FROM NguoiDung u"
-                  + " JOIN NguoiDung_VaiTro nv ON nv.MaNguoiDung=u.MaNguoiDung"
-                  + " JOIN VaiTro v ON v.MaVaiTro=nv.MaVaiTro"
-                  + " WHERE v.TenVaiTro='ROLE_SHOP_ADMIN' AND u.TrangThaiHoatDong='HOAT_DONG'");
-      for (var admin : admins) {
-        db.exec(
-            "INSERT INTO ThongBao(MaThongBao,MaNguoiDung,TieuDe,NoiDung,LoaiThongBao,LienKetDieuHuong)"
-                + " VALUES(?,?,?,?,'CANH_BAO_KHO','/admin')",
-            Db.id("TB"),
-            Db.text(admin, "id"),
-            "Phiếu kiểm kê kho mới #" + id,
-            "Nhân viên kho gửi phiếu kiểm kê (" + lines.size() + " SKU lệch): " + body.reason());
-      }
-    } catch (Exception ignored) {}
+    notifications.notifyAdmins(
+        "Phiếu kiểm kê kho mới #" + id,
+        "Nhân viên kho gửi phiếu kiểm kê (" + lines.size() + " SKU lệch): " + body.reason(),
+        "CANH_BAO_KHO",
+        "/admin/dashboard?tab=governance&view=stock");
     return draft;
   }
 
@@ -107,6 +99,15 @@ public class InventoryAuditController {
         inventory.move(variant, counted - book, "KIEM_KE_CAN_KHO", id, actor.getName(), Db.text(draft, "reason"));
       }
     }
+    String authorId = Db.text(draft, "author");
+    if (!authorId.isBlank() && !authorId.equals(actor.getName())) {
+      notifications.notifyUser(
+          authorId,
+          "Phiếu kiểm kê #" + id + " đã được duyệt",
+          "Chủ shop đã phê duyệt và cân kho tự động cho phiếu kiểm kê #" + id + " (" + lines.size() + " SKU).",
+          "CANH_BAO_KHO",
+          "/warehouse/fulfillment?tab=audit");
+    }
     return Map.of("status", "APPROVED");
   }
 
@@ -123,6 +124,15 @@ public class InventoryAuditController {
         409, "AUDIT_CLOSED", "Phiếu đã được xử lý.");
     runtime.patch("inventoryaudits", id, "status", "REJECTED",
         "reviewer", actor.getName(), "reviewedAt", Instant.now().toString());
+    String authorId = Db.text(draft, "author");
+    if (!authorId.isBlank() && !authorId.equals(actor.getName())) {
+      notifications.notifyUser(
+          authorId,
+          "Phiếu kiểm kê #" + id + " bị từ chối",
+          "Chủ shop đã từ chối phiếu kiểm kê #" + id + ". Vui lòng kiểm đếm lại tồn kho thực tế và gửi phiếu mới.",
+          "CANH_BAO_KHO",
+          "/warehouse/fulfillment?tab=audit");
+    }
     return Map.of("status", "REJECTED");
   }
 

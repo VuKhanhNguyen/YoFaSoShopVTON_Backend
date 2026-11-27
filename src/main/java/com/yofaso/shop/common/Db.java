@@ -20,10 +20,11 @@ public class Db {
 
   public record PrefixMeta(String table, String column, int digits) {}
 
-  /** Cấu hình tiền tố và độ dài số tự tăng cho toàn bộ 19 bảng có khóa chính đơn theo ERD 22 bảng và dữ liệu mẫu. */
+  /** Cấu hình tiền tố và độ dài số tự tăng cho toàn bộ 20 bảng có khóa chính đơn theo ERD 23 bảng và dữ liệu mẫu. */
   public static final Map<String, PrefixMeta> PREFIX_MAP = Map.ofEntries(
       Map.entry("ND", new PrefixMeta("NguoiDung", "MaNguoiDung", 8)),
       Map.entry("LK", new PrefixMeta("LienKetDangNhap", "MaLienKet", 8)),
+      Map.entry("DT", new PrefixMeta("ThietBiThongBao", "MaThietBi", 8)),
       Map.entry("DC", new PrefixMeta("SoDiaChi", "MaDiaChi", 8)),
       Map.entry("DM", new PrefixMeta("DanhMuc", "MaDanhMuc", 6)),
       Map.entry("SP", new PrefixMeta("SanPham", "MaSanPham", 8)),

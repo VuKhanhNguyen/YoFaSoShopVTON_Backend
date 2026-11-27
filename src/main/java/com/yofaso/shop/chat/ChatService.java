@@ -18,7 +18,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Nghiệp vụ hợp nhất cho bảng TinNhanTrucTuyen:
- * 1) Trợ lý AI Thời trang (Guardrails 4 lớp + RAG live từ 22 bảng + OpenRouter multi-model fallback).
+ * 1) Trợ lý AI Thời trang (Guardrails 4 lớp + RAG live từ 23 bảng + OpenRouter multi-model fallback).
  * 2) Live Chat CSKH trực tiếp giữa Khách hàng (ROLE_CUSTOMER) và Admin Chủ shop (ROLE_SHOP_ADMIN).
  */
 @Service
@@ -71,6 +71,7 @@ public class ChatService {
   private final MediaService media;
   private final OpenRouterClient openRouter;
   private final JsonMapper json;
+  private final com.yofaso.shop.notification.NotificationService notifications;
 
   private final String hotline;
   private final String zalo;
@@ -87,6 +88,22 @@ public class ChatService {
       MediaService media,
       OpenRouterClient openRouter,
       JsonMapper json,
+      String hotline,
+      String zalo,
+      String email,
+      String hours,
+      String showroomName,
+      String showroomAddress) {
+    this(db, media, openRouter, json, null, hotline, zalo, email, hours, showroomName, showroomAddress);
+  }
+
+  @org.springframework.beans.factory.annotation.Autowired
+  public ChatService(
+      Db db,
+      MediaService media,
+      OpenRouterClient openRouter,
+      JsonMapper json,
+      com.yofaso.shop.notification.NotificationService notifications,
       @Value("${app.support.hotline:0795605214}") String hotline,
       @Value("${app.support.zalo:0795605214}") String zalo,
       @Value("${app.support.email:nguyenvukhanh392@gmail.com}") String email,
@@ -97,6 +114,7 @@ public class ChatService {
     this.media = media;
     this.openRouter = openRouter;
     this.json = json;
+    this.notifications = notifications;
     this.hotline = fixMojibakeUtf8(hotline);
     this.zalo = fixMojibakeUtf8(zalo);
     this.email = fixMojibakeUtf8(email);
@@ -234,6 +252,14 @@ public class ChatService {
               + "VALUES(?, ?, ?, 'CHU_SHOP', 'KHACH_HANG', NULL, ?, ?, NULL, NULL, ?, 0)",
           msgId, userId, shopSession, content, cleanImage, validVton);
       var saved = loadMessageById(msgId);
+      if (notifications != null) {
+        String preview = content.length() > 90 ? content.substring(0, 89) + "…" : content;
+        notifications.pushChatToAdmins(
+            "Tin nhắn Live Chat mới từ khách hàng",
+            preview,
+            "/admin/dashboard?tab=livechat",
+            Map.of("customerId", userId, "messageId", msgId));
+      }
       return Map.of(
           "channel", CHANNEL_SHOP,
           "sessionId", shopSession,
@@ -439,6 +465,16 @@ public class ChatService {
             + "VALUES(?, ?, ?, 'CHU_SHOP', 'CHU_SHOP', ?, ?, ?, NULL, NULL, NULL, 0)",
         msgId, customerId, session, adminId, content, cleanImage);
     db.audit(adminId, "ADMIN_CHAT_REPLY", customerId + ":" + msgId);
+    if (notifications != null) {
+      String preview = content.length() > 90 ? content.substring(0, 89) + "…" : content;
+      notifications.pushOnly(
+          customerId,
+          "YoFaSo Shop vừa nhắn tin cho bạn",
+          preview,
+          "LIVE_CHAT",
+          "/chat",
+          Map.of("channel", CHANNEL_SHOP, "messageId", msgId));
+    }
     return Map.of("message", loadMessageById(msgId));
   }
 

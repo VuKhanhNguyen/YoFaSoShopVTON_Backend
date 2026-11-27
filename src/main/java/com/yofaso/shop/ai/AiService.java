@@ -20,9 +20,10 @@ public class AiService {
   private final JsonMapper json;
   private final Idempotency keys;
   private final com.yofaso.shop.scoring.ScoringService scoring;
+  private final com.yofaso.shop.notification.NotificationService notifications;
   private final boolean enabled;
 
-  /** Tương thích kiểm thử không dùng scoring. */
+  /** Tương thích kiểm thử không dùng scoring/notification. */
   public AiService(
       Db db,
       AiClient ai,
@@ -30,7 +31,7 @@ public class AiService {
       JsonMapper json,
       Idempotency keys,
       boolean enabled) {
-    this(db, ai, media, json, keys, null, enabled);
+    this(db, ai, media, json, keys, null, null, enabled);
   }
 
   /** Không load model trong JVM; mọi inference chạy trong FastAPI/worker. */
@@ -42,6 +43,7 @@ public class AiService {
       JsonMapper json,
       Idempotency keys,
       com.yofaso.shop.scoring.ScoringService scoring,
+      com.yofaso.shop.notification.NotificationService notifications,
       @Value("${app.ai.enabled}") boolean enabled) {
     this.db = db;
     this.ai = ai;
@@ -49,6 +51,7 @@ public class AiService {
     this.json = json;
     this.keys = keys;
     this.scoring = scoring;
+    this.notifications = notifications;
     this.enabled = enabled;
   }
 
@@ -556,6 +559,21 @@ public class AiService {
               }
             }
           } catch (Exception ignored) {}
+          if (notifications != null && owner != null && !owner.isBlank()) {
+            try {
+              var sRow = db.rows("SELECT DiemTongThe, XepHangThamMy FROM PhienThuDoAo WHERE MaPhienThuDo=?", id);
+              Object totalScore = sRow.isEmpty() ? null : sRow.getFirst().get("DiemTongThe");
+              String body = totalScore != null
+                  ? "Phiên thử đồ ảo #" + id + " đã hoàn tất với điểm thẩm mỹ " + totalScore + "/100. Chạm để xem ảnh và gợi ý phối đồ!"
+                  : "Phiên thử đồ ảo #" + id + " đã xử lý xong. Chạm để xem kết quả ướm thử ngay!";
+              notifications.notifyUser(
+                  owner,
+                  "Kết quả thử đồ VTON đã sẵn sàng!",
+                  body,
+                  "THU_DO_VTON",
+                  "/vton/" + id);
+            } catch (Exception ignored) {}
+          }
         }
       } else {
         var analyzed = (List<Map<String,Object>>) converted.get("variants");
@@ -615,8 +633,17 @@ public class AiService {
     }
     if (kind.equals("PRODUCT_ANALYSIS") && Set.of("FAILED", "CANCELLED").contains(status))
       finishProductAnalysis(op);
-    if (kind.equals("TRY_ON") && Set.of("FAILED","CANCELLED").contains(status))
+    if (kind.equals("TRY_ON") && Set.of("FAILED","CANCELLED").contains(status)) {
       db.exec("UPDATE PhienThuDoAo SET ThongBaoLoi=?,ThoiGianHoanTat=CURRENT_TIMESTAMP WHERE MaPhienThuDo=?",status,id);
+      if (notifications != null && owner != null && !owner.isBlank() && "FAILED".equals(status)) {
+        notifications.notifyUser(
+            owner,
+            "Phiên thử đồ VTON #" + id + " chưa thành công",
+            "Hệ thống AI chưa thể xử lý ảnh cho phiên #" + id + ". Bạn có thể mở lại để thử bằng ảnh rõ nét hơn.",
+            "THU_DO_VTON",
+            "/vton/" + id);
+      }
+    }
     Object errorCode =
         remote.get("error") instanceof Map<?, ?> error ? error.get("errorCode") : null;
     boolean retryable = remote.get("error") instanceof Map<?, ?> e && Boolean.TRUE.equals(e.get("retryable"));

@@ -124,3 +124,14 @@ app:
     hours: ${SHOP_SUPPORT_HOURS:08:00 - 22:00 (Thứ 2 - Chủ nhật)}
     showroom-name: ${SHOP_SHOWROOM_NAME:YoFaSo Atelier Đà Nẵng}
     showroom-address: ${SHOP_SHOWROOM_ADDRESS:48 Cao Thắng, Hải Châu, Đà Nẵng}
+  notifications:
+    low-stock-threshold: ${LOW_STOCK_THRESHOLD:5}
+    retention-days: ${NOTIFICATION_RETENTION_DAYS:90}
+    expo:
+      enabled: ${EXPO_PUSH_ENABLED:true}
+      api-url: ${EXPO_PUSH_API_URL:https://exp.host/--/api/v2/push/send}
+      access-token: ${EXPO_PUSH_ACCESS_TOKEN:}
+    web-push:
+      vapid-public-key: ${WEB_PUSH_VAPID_PUBLIC_KEY:}
+      vapid-private-key: ${WEB_PUSH_VAPID_PRIVATE_KEY:}
+      vapid-subject: ${WEB_PUSH_VAPID_SUBJECT:mailto:nguyenvukhanh392@gmail.com}

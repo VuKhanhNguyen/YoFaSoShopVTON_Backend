@@ -426,6 +426,28 @@ CREATE TABLE IF NOT EXISTS LienKetDangNhap (
         REFERENCES NguoiDung(MaNguoiDung) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Bảng liên kết định danh đăng nhập bên thứ 3 (Google, Facebook) với NguoiDung';
 
+-- Bảng 23: ThietBiThongBao (Lưu thiết bị nhận thông báo đẩy cho Mobile & Trình duyệt PWA)
+CREATE TABLE IF NOT EXISTS ThietBiThongBao (
+    MaThietBi VARCHAR(20) NOT NULL COMMENT 'Mã đăng ký thiết bị (VD: DT00000001)',
+    MaNguoiDung VARCHAR(20) NOT NULL COMMENT 'Khóa ngoại tham chiếu NguoiDung sở hữu thiết bị hiện tại',
+    NenTang ENUM('ANDROID', 'IOS', 'TRINH_DUYET') NOT NULL COMMENT 'Nền tảng nhận thông báo đẩy',
+    DiaChiNhanThongBao VARCHAR(700) NOT NULL COMMENT 'Mã định danh nhận thông báo đẩy của Mobile hoặc đường dẫn endpoint của trình duyệt',
+    KhoaCongKhaiMaHoa VARCHAR(255) NULL COMMENT 'Khóa công khai p256dh để mã hóa thông báo trình duyệt (NULL với Mobile)',
+    KhoaXacThucMaHoa VARCHAR(100) NULL COMMENT 'Chuỗi xác thực auth để mã hóa thông báo trình duyệt (NULL với Mobile)',
+    TenThietBi VARCHAR(120) NULL COMMENT 'Tên thiết bị/trình duyệt phục vụ tra cứu',
+    TrangThaiHoatDong TINYINT(1) NOT NULL DEFAULT 1 COMMENT '1: Đang nhận thông báo, 0: Đã đăng xuất hoặc không còn hợp lệ',
+    NgayTao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Thời điểm đăng ký lần đầu',
+    NgayCapNhat DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Thời điểm làm mới gần nhất',
+    CONSTRAINT PK_ThietBiThongBao PRIMARY KEY (MaThietBi),
+    CONSTRAINT UQ_ThietBiThongBao_DiaChi UNIQUE (DiaChiNhanThongBao),
+    CONSTRAINT FK_ThietBiThongBao_NguoiDung FOREIGN KEY (MaNguoiDung)
+        REFERENCES NguoiDung(MaNguoiDung) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT CHK_ThietBiThongBao_KhoaTrinhDuyet CHECK (
+        NenTang <> 'TRINH_DUYET' OR (KhoaCongKhaiMaHoa IS NOT NULL AND KhoaXacThucMaHoa IS NOT NULL)
+    )
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT='Bảng lưu thiết bị nhận thông báo đẩy cho ứng dụng di động và trình duyệt';
+
 -- -------------------------------------------------------------------------------------
 -- TỐI ƯU HÓA CHỈ MỤC TÌM KIẾM (INDEX CHO HIỆU NĂNG TRUY VẤN CAO)
 -- -------------------------------------------------------------------------------------
@@ -454,6 +476,7 @@ CREATE INDEX IDX_TinNhanTrucTuyen_NguoiDung_Kenh_ThoiGian ON TinNhanTrucTuyen(Ma
 CREATE INDEX IDX_TinNhanTrucTuyen_Kenh_DaDoc ON TinNhanTrucTuyen(KenhTroChuyen, DaDoc, ThoiGianGui DESC);
 CREATE INDEX IDX_TinNhanTrucTuyen_PhienThuDo ON TinNhanTrucTuyen(MaPhienThuDo);
 CREATE INDEX IDX_LienKetDangNhap_NguoiDung ON LienKetDangNhap(MaNguoiDung);
+CREATE INDEX IDX_ThietBiThongBao_NguoiDung_HoatDong ON ThietBiThongBao(MaNguoiDung, TrangThaiHoatDong);
 
 -- =====================================================================================
 

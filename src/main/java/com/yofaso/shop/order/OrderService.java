@@ -12,12 +12,14 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.yofaso.shop.common.Db;
 import com.yofaso.shop.common.Idempotency;
 import com.yofaso.shop.common.Problem;
+import com.yofaso.shop.notification.NotificationService;
 
 /** Đặt hàng, snapshot giá, voucher và chuyển trạng thái có khóa chống bán lố. */
 @Service
@@ -25,6 +27,7 @@ public class OrderService {
   private final Db db;
   private final InventoryService stock;
   private final Idempotency keys;
+  private final NotificationService notifications;
   public static final String SUMMARY =
       "SELECT MaDonHang AS orderId,MaNguoiDung AS userId,KenhBanHang AS channel,TenNguoiNhan AS"
           + " recipientName,SoDienThoaiNhan AS phone,DiaChiGiaoChiTiet AS address,TrangThaiDonHang"
@@ -42,11 +45,19 @@ public class OrderService {
           + " (SELECT COALESCE(SUM(c.SoLuong * c.DonGiaLucDatHang), 0) FROM ChiTietDonHang c WHERE c.MaDonHang=DonHang.MaDonHang) AS subtotal"
           + " FROM DonHang";
 
-  /** Nhận kho và idempotency trong cùng transaction MySQL. */
+  /** Tương thích unit test không dùng NotificationService. */
   public OrderService(Db db, InventoryService stock, Idempotency keys) {
+    this(db, stock, keys, null);
+  }
+
+  /** Nhận kho, idempotency và dịch vụ thông báo trong cùng transaction MySQL. */
+  @Autowired
+  public OrderService(
+      Db db, InventoryService stock, Idempotency keys, NotificationService notifications) {
     this.db = db;
     this.stock = stock;
     this.keys = keys;
+    this.notifications = notifications;
   }
 
   /** Trả đơn cùng tổng giá tính từ snapshot dòng hàng và ảnh đại diện. */
@@ -294,20 +305,20 @@ public class OrderService {
     }
     keys.complete(actor, scope, key, id);
     db.audit(actor, "ORDER_CREATE", id);
-    if (customer != null) notice(customer, id, "Đơn hàng đã được tạo.");
+    if (customer != null) notice(customer, id, "Đơn hàng #" + id + " đã được tạo thành công.");
     if (!pos) {
       notifyRole(
           "ROLE_STAFF_WAREHOUSE",
           "Đơn hàng online mới #" + id,
           "Khách " + name + " vừa đặt đơn hàng mới (" + snapshots.size() + " dòng hàng). Vui lòng tiếp nhận đóng gói.",
           "DON_HANG",
-          "/warehouse");
+          "/warehouse/fulfillment?tab=pick");
       notifyRole(
           "ROLE_SHOP_ADMIN",
           "Đơn hàng mới #" + id,
           "Đơn hàng online #" + id + " từ " + name + " (" + total.setScale(0, RoundingMode.HALF_UP) + "đ).",
           "DON_HANG",
-          "/admin");
+          "/admin/dashboard?tab=operations&order=" + id);
     }
     return detail(id);
   }
@@ -734,6 +745,37 @@ public class OrderService {
     db.exec("UPDATE NguoiDung_KhuyenMai SET TrangThai='CHUA_DUNG', MaDonHangDaDung=NULL, NgaySuDung=NULL WHERE MaDonHangDaDung=?", id);
     // Hoàn hàng đã thanh toán vẫn cần đối soát tiền; không tự ghi DA_HOAN_TIEN.
     db.audit(actor, returned ? "ORDER_RETURN_RECEIVED" : "ORDER_CANCEL", id);
+    if (o.get("MaNguoiDung") != null) {
+      String custMsg = returned
+          ? "Kho đã tiếp nhận kiện hàng hoàn trả cho đơn #" + id + "."
+          : (actor == null
+              ? "Đơn hàng #" + id + " đã tự động hủy do quá thời hạn thanh toán VietQR 15 phút."
+              : (customer
+                  ? "Đơn hàng #" + id + " đã được hủy theo yêu cầu của bạn."
+                  : "Đơn hàng #" + id + " đã được cửa hàng hủy."));
+      notice(Db.text(o, "MaNguoiDung"), id, custMsg);
+    }
+    if (returned) {
+      notifyRole(
+          "ROLE_SHOP_ADMIN",
+          "Đã nhận hàng hoàn đơn #" + id,
+          "Kho đã tiếp nhận kiện hàng hoàn của đơn #" + id + (restock ? " và hoàn lại tồn kho." : " (phân loại hàng lỗi)."),
+          "DON_HANG",
+          "/admin/dashboard?tab=operations&order=" + id);
+    } else if (customer) {
+      notifyRole(
+          "ROLE_STAFF_WAREHOUSE",
+          "Khách hủy đơn #" + id,
+          "Khách hàng vừa hủy đơn #" + id + ". Đã tự động hoàn giữ tồn kho.",
+          "DON_HANG",
+          "/warehouse/fulfillment?tab=pick");
+      notifyRole(
+          "ROLE_SHOP_ADMIN",
+          "Khách hủy đơn #" + id,
+          "Khách hàng vừa hủy đơn online #" + id + ".",
+          "DON_HANG",
+          "/admin/dashboard?tab=operations&order=" + id);
+    }
     return detail(id);
   }
 
@@ -808,7 +850,12 @@ public class OrderService {
             "SELECT MaBienThe FROM ChiTietDonHang WHERE MaDonHang=? ORDER BY MaBienThe", id))
           stock.move(Db.text(line, "MaBienThe"), 0, "XUAT_KHO_GIAO_HANG", id, actor, "Bàn giao kiện hàng");
         if (shipper != null && !shipper.isBlank()) {
-          noticeDirect(shipper, "Đơn giao mới #" + id, "Kho vừa bàn giao kiện hàng #" + id + " cho tuyến của bạn.", "DON_HANG", "/shipper");
+          noticeDirect(
+              shipper,
+              "Đơn giao mới #" + id,
+              "Kho vừa bàn giao kiện hàng #" + id + " cho tuyến giao của bạn.",
+              "DON_HANG",
+              "/shipper/deliveries?order=" + id);
         }
       }
       case "deliver" -> {
@@ -847,8 +894,16 @@ public class OrderService {
       default -> throw new Problem(400, "ACTION_INVALID", "Thao tác đơn không hợp lệ.");
     }
     db.audit(actor, "ORDER_" + action.toUpperCase(Locale.ROOT), id);
-    if (o.get("MaNguoiDung") != null)
-      notice(Db.text(o, "MaNguoiDung"), id, "Đơn đã cập nhật trạng thái.");
+    if (o.get("MaNguoiDung") != null) {
+      String msg = switch (action) {
+        case "pack" -> "Đơn hàng #" + id + " đã được xác nhận và đang được kho đóng gói.";
+        case "assign", "pickup" -> "Đơn hàng #" + id + " đã bàn giao cho shipper và đang trên đường giao đến bạn.";
+        case "deliver" -> "Đơn hàng #" + id + " đã giao thành công. Hãy đánh giá sản phẩm để tích điểm nhé!";
+        case "failed" -> "Đơn hàng #" + id + " tạm hoàn về kho chờ điều phối giao lại.";
+        default -> "Đơn hàng #" + id + " đã cập nhật trạng thái.";
+      };
+      notice(Db.text(o, "MaNguoiDung"), id, msg);
+    }
     return detail(id);
   }
 
@@ -906,10 +961,14 @@ public class OrderService {
 
   /** Thông báo gọn, không nhét địa chỉ/số điện thoại vào log. */
   private void notice(String user, String id, String message) {
-    noticeDirect(user, "Cập nhật đơn hàng", message, "DON_HANG", "/orders/" + id);
+    noticeDirect(user, "Cập nhật đơn hàng #" + id, message, "DON_HANG", "/orders/" + id);
   }
 
   private void noticeDirect(String userId, String title, String content, String type, String link) {
+    if (notifications != null) {
+      notifications.notifyUser(userId, title, content, type, link);
+      return;
+    }
     try {
       db.exec(
           "INSERT INTO ThongBao(MaThongBao,MaNguoiDung,TieuDe,NoiDung,LoaiThongBao,LienKetDieuHuong)"
@@ -924,6 +983,10 @@ public class OrderService {
   }
 
   private void notifyRole(String roleName, String title, String content, String type, String link) {
+    if (notifications != null) {
+      notifications.notifyRole(roleName, title, content, type, link);
+      return;
+    }
     try {
       var users =
           db.rows(

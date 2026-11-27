@@ -64,19 +64,22 @@ public class StaffController {
   private final InventoryService stock;
   private final Idempotency keys;
   private final PasswordEncoder passwords;
+  private final com.yofaso.shop.notification.NotificationService notifications;
 
-  /** Nhận các service dùng lại giữa POS, kho và admin. */
+  /** Nhận các service dùng lại giữa POS, kho, admin và thông báo đa kênh. */
   public StaffController(
       Db db,
       OrderService orders,
       InventoryService stock,
       PasswordEncoder passwords,
-      Idempotency keys) {
+      Idempotency keys,
+      com.yofaso.shop.notification.NotificationService notifications) {
     this.db = db;
     this.orders = orders;
     this.stock = stock;
     this.keys = keys;
     this.passwords = passwords;
+    this.notifications = notifications;
   }
 
   /** Danh sách quyền có sẵn; quyền mới cần có chính sách endpoint tương ứng. */
@@ -450,7 +453,7 @@ public class StaffController {
   @GetMapping("/staff/orders/{id}")
   @PreAuthorize("hasAnyRole('SHOP_ADMIN','STAFF_WAREHOUSE','STAFF_CASHIER','STAFF_SHIPPER')")
   public Map<String, Object> staffOrder(Authentication a, @PathVariable String id) {
-    String clean = id.trim().toUpperCase().replaceFirst("^#", "").replaceFirst("^YFS", "");
+    String clean = id.trim().toUpperCase().replaceFirst("^#", "").replaceFirst("^YFS(?!-)", "");
     String target = clean;
     if (clean.matches("^\\d+$")) {
       target = String.format("DH%08d", Long.parseLong(clean));
@@ -726,11 +729,11 @@ public class StaffController {
         409,
         "SHIFT_STATE_INVALID",
         "Ca không mở hoặc không thuộc bạn.");
-    notifyAdmins(
+    notifications.notifyAdmins(
         "Ca POS #" + id + " chờ duyệt kết ca",
-        "Thu ngân " + a.getName() + " vừa đóng ca và khai báo tiền két kiểm đếm " + b.amount().setScale(0, java.math.RoundingMode.HALF_UP) + "đ.",
+        "Thu ngân " + a.getName() + " vừa đóng ca và nộp báo cáo kiểm đếm tiền két chờ phê duyệt.",
         "HE_THONG",
-        "/admin");
+        "/admin/dashboard?tab=governance&view=shift");
     return shift(id, a);
   }
 
@@ -738,6 +741,7 @@ public class StaffController {
   @PostMapping("/admin/shifts/{id}/approve")
   @PreAuthorize("hasRole('SHOP_ADMIN')")
   public Map<String, Object> approve(@PathVariable String id, Authentication a) {
+    var existing = db.one("SELECT MaThuNgan FROM CaLamViecThuNgan WHERE MaCaLamViec=?", id);
     Problem.require(
         db.exec(
                 "UPDATE CaLamViecThuNgan SET TrangThaiCa='DA_PHE_DUYET_BAN_GIAO' WHERE"
@@ -748,6 +752,15 @@ public class StaffController {
         "SHIFT_STATE_INVALID",
         "Ca chưa chờ duyệt.");
     db.audit(a.getName(), "SHIFT_APPROVE", id);
+    String cashierId = Db.text(existing, "MaThuNgan");
+    if (!cashierId.isBlank() && !cashierId.equals(a.getName())) {
+      notifications.notifyUser(
+          cashierId,
+          "Ca POS #" + id + " đã được phê duyệt bàn giao",
+          "Chủ shop đã đối soát và phê duyệt biên bản kết ca #" + id + " của bạn.",
+          "HE_THONG",
+          "/pos/terminal?panel=shift");
+    }
     return shift(id, a);
   }
 
@@ -1312,28 +1325,6 @@ public class StaffController {
   private static double pct(long num, long den) {
     if (den <= 0) return 0.0;
     return Math.round(((double) num / den) * 1000.0) / 10.0;
-  }
-
-  private void notifyAdmins(String title, String content, String type, String link) {
-    try {
-      var admins =
-          db.rows(
-              "SELECT DISTINCT u.MaNguoiDung AS id FROM NguoiDung u"
-                  + " JOIN NguoiDung_VaiTro nv ON nv.MaNguoiDung=u.MaNguoiDung"
-                  + " JOIN VaiTro v ON v.MaVaiTro=nv.MaVaiTro"
-                  + " WHERE v.TenVaiTro='ROLE_SHOP_ADMIN' AND u.TrangThaiHoatDong='HOAT_DONG'");
-      for (var admin : admins) {
-        db.exec(
-            "INSERT INTO ThongBao(MaThongBao,MaNguoiDung,TieuDe,NoiDung,LoaiThongBao,LienKetDieuHuong)"
-                + " VALUES(?,?,?,?,?,?)",
-            Db.id("TB"),
-            Db.text(admin, "id"),
-            title,
-            content,
-            type,
-            link);
-      }
-    } catch (Exception ignored) {}
   }
 
   /** Dashboard doanh thu snapshot của các đơn hoàn tất; chưa coi là báo cáo kế toán. */

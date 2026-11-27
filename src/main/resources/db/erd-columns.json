@@ -249,5 +249,17 @@
     "NhaCungCap",
     "MaDinhDanhNgoai",
     "NgayLienKet"
+  ],
+  "ThietBiThongBao": [
+    "MaThietBi",
+    "MaNguoiDung",
+    "NenTang",
+    "DiaChiNhanThongBao",
+    "KhoaCongKhaiMaHoa",
+    "KhoaXacThucMaHoa",
+    "TenThietBi",
+    "TrangThaiHoatDong",
+    "NgayTao",
+    "NgayCapNhat"
   ]
 }

@@ -1,7 +1,8 @@
 package com.yofaso.shop.order;
 
 import com.yofaso.shop.common.*;
-import java.util.*;
+import com.yofaso.shop.notification.NotificationService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -9,10 +10,18 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class InventoryService {
   private final Db db;
+  private final NotificationService notifications;
 
-  /** Nhận DB dùng chung với transaction đặt hàng. */
+  /** Tương thích unit test không dùng NotificationService. */
   public InventoryService(Db db) {
+    this(db, null);
+  }
+
+  /** Nhận DB dùng chung với transaction đặt hàng và kênh cảnh báo tồn kho. */
+  @Autowired
+  public InventoryService(Db db, NotificationService notifications) {
     this.db = db;
+    this.notifications = notifications;
   }
 
   /** Điều chỉnh nguyên tử; không trừ thêm khi giao hàng vì checkout đã giữ tồn. */
@@ -49,6 +58,9 @@ public class InventoryService {
         reference,
         actor,
         note);
+    if (notifications != null && delta != 0) {
+      notifications.checkLowStockAndAlert(variant, (int) after);
+    }
     return movement;
   }
 }

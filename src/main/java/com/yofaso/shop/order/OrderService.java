@@ -302,6 +302,7 @@ public class OrderService {
           id);
     if (pos) {
       markSuggestionsPurchased(customer, id, b.sessionId());
+      awardOrderLoyalty(customer, id);
     }
     keys.complete(actor, scope, key, id);
     db.audit(actor, "ORDER_CREATE", id);
@@ -738,6 +739,9 @@ public class OrderService {
             "Hàng hoàn lỗi - chuyển kho chờ thanh lý");
     }
     db.exec("UPDATE DonHang SET TrangThaiDonHang=?,SoTienThuHo=0 WHERE MaDonHang=?", target, id);
+    if (returned && "HOAN_TAT".equals(state) && o.get("MaNguoiDung") != null) {
+      reverseOrderLoyalty(Db.text(o, "MaNguoiDung"), id);
+    }
     if (o.get("MaKhuyenMai") != null)
       db.exec(
           "UPDATE KhuyenMai SET SoLuongDaDung=GREATEST(0,SoLuongDaDung-1) WHERE MaKhuyenMai=?",
@@ -874,7 +878,9 @@ public class OrderService {
             id);
         db.exec("UPDATE NguoiDung_KhuyenMai SET TrangThai='DA_DUNG' WHERE MaDonHangDaDung=?", id);
         if (o.get("MaNguoiDung") != null) {
-          markSuggestionsPurchased(Db.text(o, "MaNguoiDung"), id, null);
+          String owner = Db.text(o, "MaNguoiDung");
+          markSuggestionsPurchased(owner, id, null);
+          awardOrderLoyalty(owner, id);
         }
       }
       case "failed" -> {
@@ -912,6 +918,74 @@ public class OrderService {
         && (!"VIETQR_CHUYEN_KHOAN_ONLINE".equals(order.get("PhuongThucThanhToan"))
             || "DA_THANH_TOAN".equals(order.get("TrangThaiThanhToan"))),
         409, "ORDER_NOT_READY", "Đơn online chưa đủ điều kiện xử lý kho.");
+  }
+
+  /** Quy đổi 1 điểm tích lũy cho mỗi 10.000đ tiền hàng thực trả (không tính phí ship). */
+  static int loyaltyPointsForAmount(BigDecimal netPaid) {
+    if (netPaid == null || netPaid.compareTo(BigDecimal.valueOf(10_000)) < 0) return 0;
+    return netPaid.divideToIntegralValue(BigDecimal.valueOf(10_000)).intValue();
+  }
+
+  /** Xét nâng hạng theo thang Đồng (<100), Bạc (100..299), Vàng (300..499), Kim cương (>=500); giữ nguyên nếu đang có hạng đặc cách cao hơn. */
+  static String tierForPoints(int points, String currentTier) {
+    String earnedTier =
+        points >= 500 ? "KIM_CUONG" : points >= 300 ? "VANG" : points >= 100 ? "BAC" : "DONG";
+    return tierRank(currentTier) > tierRank(earnedTier) ? currentTier.trim().toUpperCase(Locale.ROOT) : earnedTier;
+  }
+
+  private static int tierRank(String tier) {
+    if (tier == null) return 0;
+    return switch (tier.trim().toUpperCase(Locale.ROOT)) {
+      case "KIM_CUONG" -> 3;
+      case "VANG" -> 2;
+      case "BAC" -> 1;
+      default -> 0;
+    };
+  }
+
+  private int earnedPointsOfOrder(String orderId) {
+    var row =
+        db.one(
+            "SELECT GREATEST(0, COALESCE((SELECT SUM(c.SoLuong * c.DonGiaLucDatHang) FROM"
+                + " ChiTietDonHang c WHERE c.MaDonHang=d.MaDonHang), 0) - d.TienGiamGia) AS netPaid"
+                + " FROM DonHang d WHERE d.MaDonHang=?",
+            orderId);
+    return loyaltyPointsForAmount(Db.money(row, "netPaid"));
+  }
+
+  private void awardOrderLoyalty(String userId, String orderId) {
+    if (userId == null || userId.isBlank()) return;
+    int earned = earnedPointsOfOrder(orderId);
+    var user =
+        db.one(
+            "SELECT DiemTichLuy, HangThanhVien FROM NguoiDung WHERE MaNguoiDung=? FOR UPDATE",
+            userId);
+    int currentPoints = ((Number) user.getOrDefault("DiemTichLuy", 0)).intValue();
+    int nextPoints = Math.max(0, currentPoints + earned);
+    String currentTier = Db.text(user, "HangThanhVien");
+    String nextTier = tierForPoints(nextPoints, currentTier);
+    if (nextPoints != currentPoints || !nextTier.equals(currentTier)) {
+      db.exec(
+          "UPDATE NguoiDung SET DiemTichLuy=?, HangThanhVien=? WHERE MaNguoiDung=?",
+          nextPoints,
+          nextTier,
+          userId);
+    }
+  }
+
+  private void reverseOrderLoyalty(String userId, String orderId) {
+    if (userId == null || userId.isBlank()) return;
+    int earned = earnedPointsOfOrder(orderId);
+    if (earned <= 0) return;
+    var user =
+        db.one(
+            "SELECT DiemTichLuy FROM NguoiDung WHERE MaNguoiDung=? FOR UPDATE",
+            userId);
+    int currentPoints = ((Number) user.getOrDefault("DiemTichLuy", 0)).intValue();
+    int nextPoints = Math.max(0, currentPoints - earned);
+    if (nextPoints != currentPoints) {
+      db.exec("UPDATE NguoiDung SET DiemTichLuy=? WHERE MaNguoiDung=?", nextPoints, userId);
+    }
   }
 
   @Transactional
